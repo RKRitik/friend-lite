@@ -53,9 +53,11 @@ async function ensureNotificationPermission() {
   }
 }
 
-// On Android 14+ (API 34+), FOREGROUND_SERVICE_MICROPHONE requires RECORD_AUDIO
-// FOREGROUND_SERVICE_MICROPHONE is automatically granted when RECORD_AUDIO is granted
-// We must ensure RECORD_AUDIO is granted BEFORE starting the foreground service
+// On Android 14+ (API 34+), FOREGROUND_SERVICE_MICROPHONE is a separate manifest permission
+// with normal protection level (auto-granted at install time), but it does NOT replace RECORD_AUDIO.
+// The manifest must declare FOREGROUND_SERVICE_MICROPHONE, and the app must request/obtain
+// RECORD_AUDIO as a runtime permission BEFORE starting the foreground service.
+// RECORD_AUDIO remains a dangerous permission that must be requested at runtime.
 async function ensureForegroundServiceMicPermission() {
   if (Platform.OS !== 'android' || Platform.Version < 34) {
     return true;
@@ -76,7 +78,7 @@ async function ensureForegroundServiceMicPermission() {
       }
     }
 
-    console.log('[AudioStreamer] RECORD_AUDIO permission granted. FOREGROUND_SERVICE_MICROPHONE should be automatically available.');
+    console.log('[AudioStreamer] RECORD_AUDIO permission granted. FOREGROUND_SERVICE_MICROPHONE must be declared in manifest.');
     return true;
   } catch (error) {
     console.error('[AudioStreamer] Error ensuring foreground service mic permission:', error);
