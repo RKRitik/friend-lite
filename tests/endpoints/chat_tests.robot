@@ -3,21 +3,21 @@ Documentation    Chat Service API Tests
 Library          RequestsLibrary
 Library          Collections
 Library          String
-Resource         ../resources/setup_resources.robot
-Resource         ../resources/session_resources.robot
-Resource         ../resources/user_resources.robot
+Resource         ../setup/setup_keywords.robot
+Resource         ../setup/teardown_keywords.robot
+Resource         ../resources/session_keywords.robot
+Resource         ../resources/user_keywords.robot
 Resource         ../resources/chat_keywords.robot
 Suite Setup      Suite Setup
 Suite Teardown   Suite Teardown
+Test Setup       Test Cleanup
 
 *** Test Cases ***
 
 Create Chat Session Test
     [Documentation]    Test creating a new chat session
-    [Tags]             chat    session    create    positive
-    Get Anonymous Session    anon_session
+    [Tags]    chat
 
-    Create API Session    admin_session
     ${session}=        Create Test Chat Session
 
     # Verify chat session structure
@@ -32,11 +32,10 @@ Create Chat Session Test
 
 Create Chat Session With Custom Title Test
     [Documentation]    Test creating chat session with custom title
-    [Tags]             chat    session    create    positive
-    Get Anonymous Session    anon_session
+    [Tags]    chat
 
-    Create API Session    admin_session
-    ${custom_title}=   Set Variable    Custom Chat Title ${RANDOM_ID}
+    ${random_id}=      Get Random ID
+    ${custom_title}=   Set Variable    Custom Chat Title ${random_id}
     ${response}=       Create Chat Session    ${custom_title}
 
     Should Be Equal As Integers    ${response.status_code}    200
@@ -48,10 +47,7 @@ Create Chat Session With Custom Title Test
 
 Get Chat Sessions Test
     [Documentation]    Test getting all chat sessions for user
-    [Tags]             chat    session    list    positive
-    Get Anonymous Session    anon_session
-
-    Create API Session    admin_session
+    [Tags]    chat
 
     # Create a test session first
     ${test_session}=   Create Test Chat Session
@@ -82,13 +78,11 @@ Get Chat Sessions Test
 
 Get Specific Chat Session Test
     [Documentation]    Test getting a specific chat session
-    [Tags]             chat    session    individual    positive
-    Get Anonymous Session    anon_session
+    [Tags]    chat
 
-    Create API Session    admin_session
     ${test_session}=   Create Test Chat Session
 
-    ${response}=       GET On Session    admin_session    /api/chat/sessions/${test_session}[session_id]
+    ${response}=       GET On Session    api    /api/chat/sessions/${test_session}[session_id]
     Should Be Equal As Integers    ${response.status_code}    200
 
     ${session}=        Set Variable    ${response.json()}
@@ -104,13 +98,12 @@ Get Specific Chat Session Test
 
 Update Chat Session Test
     [Documentation]    Test updating a chat session title
-    [Tags]             chat    session    update    positive
-    Get Anonymous Session    anon_session
+    [Tags]    chat
 
-    Create API Session    admin_session
     ${test_session}=   Create Test Chat Session
 
-    ${new_title}=      Set Variable    Updated Title ${RANDOM_ID}
+    ${random_id}=      Get Random ID
+    ${new_title}=      Set Variable    Updated Title ${random_id}
     ${response}=       Update Chat Session    ${test_session}[session_id]    ${new_title}
 
     Should Be Equal As Integers    ${response.status_code}    200
@@ -122,25 +115,21 @@ Update Chat Session Test
 
 Delete Chat Session Test
     [Documentation]    Test deleting a chat session
-    [Tags]             chat    session    delete    positive
-    Get Anonymous Session    anon_session
+    [Tags]    chat
 
-    Create API Session    admin_session
     ${test_session}=   Create Test Chat Session
 
     ${response}=       Delete Chat Session    ${test_session}[session_id]
     Should Be Equal As Integers    ${response.status_code}    200
 
     # Verify session is deleted
-    ${response}=       Get Chat Session    ${test_session}[session_id] 
+    ${response}=       Get Chat Session    ${test_session}[session_id]    404
     Should Be Equal As Integers    ${response.status_code}    404
 
 Get Session Messages Test
     [Documentation]    Test getting messages from a chat session
-    [Tags]             chat    messages    positive
-    Get Anonymous Session    anon_session
+    [Tags]    chat
 
-    Create API Session    admin_session
     ${test_session}=   Create Test Chat Session
 
     ${response}=       Get Session Messages    ${test_session}[session_id]
@@ -158,10 +147,8 @@ Get Session Messages Test
 
 Get Chat Statistics Test
     [Documentation]    Test getting chat statistics for user
-    [Tags]             chat    statistics    positive
-    Get Anonymous Session    anon_session
+    [Tags]    chat
 
-    Create API Session    admin_session
     ${response}=       Get Chat Statistics
 
     Should Be Equal As Integers    ${response.status_code}    200
@@ -176,10 +163,7 @@ Get Chat Statistics Test
 
 Chat Session Pagination Test
     [Documentation]    Test chat session pagination
-    [Tags]             chat    session    pagination    positive
-    Get Anonymous Session    anon_session
-
-    Create API Session    admin_session
+    [Tags]    chat
 
     # Test with different limits
     ${response1}=      Get Chat Sessions    5
@@ -198,7 +182,7 @@ Chat Session Pagination Test
 
 Unauthorized Chat Access Test
     [Documentation]    Test that chat endpoints require authentication
-    [Tags]             chat    security    negative
+    [Tags]    chat	permissions
     Get Anonymous Session    session
 
     # Try to access sessions without token
@@ -211,10 +195,8 @@ Unauthorized Chat Access Test
 
 Non-Existent Session Operations Test
     [Documentation]    Test operations on non-existent chat sessions
-    [Tags]             chat    session    negative    notfound
-    Get Anonymous Session    anon_session
+    [Tags]    chat
 
-    Create API Session    admin_session
     ${fake_id}=        Set Variable    non-existent-session-id
 
     # Try to get non-existent session
@@ -235,10 +217,7 @@ Non-Existent Session Operations Test
 
 Invalid Chat Session Data Test
     [Documentation]    Test creating chat session with invalid data
-    [Tags]             chat    session    negative    validation
-    Get Anonymous Session    anon_session
-
-    Create API Session    admin_session
+    [Tags]    chat
 
     # Test with title too long (over 200 characters)
     ${long_title}=     Generate Random String    201    [LETTERS]
@@ -255,14 +234,11 @@ Invalid Chat Session Data Test
 
 User Isolation Test
     [Documentation]    Test that users can only access their own chat sessions
-    [Tags]             chat    security    isolation
-    Get Anonymous Session    anon_session
-
-    Create API Session    admin_session
+    [Tags]    chat	permissions
 
     # Create a test user
-    ${test_user}=      Create Test User    admin_session    test-user-${RANDOM_ID}@example.com    test-password-123
-    Create API Session    user_session    email=test-user-${RANDOM_ID}@example.com    password=test-password-123
+    ${test_user}=      Create Test User    api
+    Create API Session    user_session    email=${test_user}[email]    password=${TEST_USER_PASSWORD}
 
     # Create session as admin
     ${admin_chat_session}=  Create Test Chat Session
@@ -280,4 +256,5 @@ User Isolation Test
 
     # Cleanup
     Cleanup Test Chat Session    ${admin_chat_session}[session_id]
+    Delete User    api    ${test_user}[id]
 
