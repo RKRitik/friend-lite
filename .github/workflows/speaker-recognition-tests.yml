@@ -46,13 +46,24 @@ jobs:
       with:
         python-version: "3.12"
         
-    - name: Run Speaker Recognition Integration Tests
+    - name: Verify API Keys
+      run: |
+        echo "Checking API keys..."
+        echo "HF_TOKEN length: ${#HF_TOKEN}"
+        echo "DEEPGRAM_API_KEY length: ${#DEEPGRAM_API_KEY}"
       env:
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
         DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+
+    - name: Run Speaker Recognition Integration Tests
       run: |
+        export HF_TOKEN="${HF_TOKEN}"
+        export DEEPGRAM_API_KEY="${DEEPGRAM_API_KEY}"
         cd extras/speaker-recognition
         ./run-test.sh
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
         
     - name: Debug Docker build failure
       if: failure()
