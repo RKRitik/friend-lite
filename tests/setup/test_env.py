@@ -3,13 +3,14 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env.test from the tests directory
-test_env_path = Path(__file__).parent / ".env.test"
+# Load .env.test from the tests directory (one level up from setup/)
+test_env_path = Path(__file__).resolve().parents[1] / ".env.test"
 load_dotenv(test_env_path)
 
 # API Configuration
 API_URL = 'http://localhost:8001'  # Use BACKEND_URL from test.env
 API_BASE = 'http://localhost:8001/api'
+SPEAKER_RECOGNITION_URL = 'http://localhost:8085'  # Speaker recognition service
 
 WEB_URL = os.getenv('FRONTEND_URL', 'http://localhost:3001')  # Use FRONTEND_URL from test.env
 # Admin user credentials (Robot Framework format)

@@ -18,9 +18,12 @@ Library          OperatingSystem
 Library          Process
 Library          String
 Library          Collections
+Library          DateTime
 Variables        test_env.py
 Resource         ../resources/audio_keywords.robot
 Resource         ../resources/conversation_keywords.robot
+Resource         ../resources/websocket_keywords.robot
+Resource         ../resources/queue_keywords.robot
 
 
 *** Keywords ***

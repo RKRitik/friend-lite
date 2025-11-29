@@ -21,6 +21,7 @@ Library          String
 Library          Process
 Variables        test_env.py
 Resource         ../resources/session_keywords.robot
+Resource         ../resources/system_keywords.robot
 Resource         test_manager_keywords.robot
 
 
@@ -53,7 +54,9 @@ Dev Mode Setup
     [Documentation]    Default development mode - reuse containers, clear data only (fastest)
     Log To Console    \n=== Dev Mode Setup (Default) ===
 
+    Log To Console    Checking if services are ready at ${API_URL}...
     ${is_up}=    Run Keyword And Return Status    Check Services Ready    ${API_URL}
+    Log To Console    Services ready check result: ${is_up}
 
     IF    ${is_up}
         Log To Console    ✓ Reusing existing containers (fast mode)
@@ -92,7 +95,7 @@ Prod Mode Setup
 Start Docker Services
     [Documentation]    Start Docker services using docker-compose
     ...                Checks if services are already running to avoid redundant starts
-    [Arguments]    ${compose_file}=docker-compose-ci.yml    ${working_dir}=backends/advanced    ${build}=${False}
+    [Arguments]    ${compose_file}=docker-compose-test.yml    ${working_dir}=backends/advanced    ${build}=${False}
 
     ${is_up}=    Run Keyword And Return Status    Check Services Ready    ${API_URL}
 
@@ -117,7 +120,7 @@ Start Docker Services
 
 Stop Docker Services
     [Documentation]    Stop Docker services using docker-compose
-    [Arguments]    ${compose_file}=docker-compose-ci.yml    ${working_dir}=backends/advanced    ${remove_volumes}=${False}
+    [Arguments]    ${compose_file}=docker-compose-test.yml    ${working_dir}=backends/advanced    ${remove_volumes}=${False}
 
     IF    ${remove_volumes}
         Run Process    docker    compose    -f    ${compose_file}    down    -v    cwd=${working_dir}    shell=True
@@ -127,7 +130,7 @@ Stop Docker Services
 
 Rebuild Docker Services
     [Documentation]    Rebuild and restart Docker services
-    [Arguments]    ${compose_file}=docker-compose-ci.yml    ${working_dir}=backends/advanced
+    [Arguments]    ${compose_file}=docker-compose-test.yml    ${working_dir}=backends/advanced
 
     Log To Console    Rebuilding containers with latest code...
     Run Process    docker    compose    -f    ${compose_file}    up    -d    --build    cwd=${working_dir}    shell=True
@@ -140,8 +143,7 @@ Check Services Ready
     [Documentation]    Check if services are ready via readiness endpoint
     [Arguments]    ${base_url}=${API_URL}
 
-    ${status}=    Run Keyword And Return Status    Readiness Check    ${base_url}
-    RETURN    ${status}
+    Readiness Check    ${base_url}
 
 Start Speaker Recognition Service
     [Documentation]    Start the speaker recognition service using docker compose

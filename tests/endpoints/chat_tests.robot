@@ -12,6 +12,7 @@ Suite Setup      Suite Setup
 Suite Teardown   Suite Teardown
 Test Setup       Test Cleanup
 
+
 *** Test Cases ***
 
 Create Chat Session Test
@@ -27,9 +28,6 @@ Create Chat Session Test
     Dictionary Should Contain Key    ${session}    updated_at
     Should Contain     ${session}[title]    Test Session
 
-    # Cleanup
-    Cleanup Test Chat Session    ${session}[session_id]
-
 Create Chat Session With Custom Title Test
     [Documentation]    Test creating chat session with custom title
     [Tags]    chat
@@ -42,9 +40,7 @@ Create Chat Session With Custom Title Test
     ${session}=        Set Variable    ${response.json()}
     Should Be Equal    ${session}[title]    ${custom_title}
 
-    # Cleanup
-    Cleanup Test Chat Session    ${session}[session_id]
-
+    
 Get Chat Sessions Test
     [Documentation]    Test getting all chat sessions for user
     [Tags]    chat
@@ -73,8 +69,6 @@ Get Chat Sessions Test
     END
     Should Be True    ${found}
 
-    # Cleanup
-    Cleanup Test Chat Session    ${test_session}[session_id]
 
 Get Specific Chat Session Test
     [Documentation]    Test getting a specific chat session
@@ -93,9 +87,6 @@ Get Specific Chat Session Test
     Dictionary Should Contain Key    ${session}    updated_at
     Should Be Equal    ${session}[session_id]    ${test_session}[session_id]
 
-    # Cleanup
-    Cleanup Test Chat Session    ${test_session}[session_id]
-
 Update Chat Session Test
     [Documentation]    Test updating a chat session title
     [Tags]    chat
@@ -109,9 +100,6 @@ Update Chat Session Test
     Should Be Equal As Integers    ${response.status_code}    200
     ${updated_session}=    Set Variable    ${response.json()}
     Should Be Equal    ${updated_session}[title]    ${new_title}
-
-    # Cleanup
-    Cleanup Test Chat Session    ${test_session}[session_id]
 
 Delete Chat Session Test
     [Documentation]    Test deleting a chat session
@@ -142,8 +130,6 @@ Get Session Messages Test
     ${count}=          Get Length    ${messages}
     Should Be Equal As Integers    ${count}    0
 
-    # Cleanup
-    Cleanup Test Chat Session    ${test_session}[session_id]
 
 Get Chat Statistics Test
     [Documentation]    Test getting chat statistics for user
@@ -229,8 +215,6 @@ Invalid Chat Session Data Test
     ${response}=       Update Chat Session    ${test_session}[session_id]    ${EMPTY}    422
     Should Be Equal As Integers    ${response.status_code}    422
 
-    # Cleanup
-    Cleanup Test Chat Session    ${test_session}[session_id]
 
 User Isolation Test
     [Documentation]    Test that users can only access their own chat sessions
@@ -254,7 +238,5 @@ User Isolation Test
     ${count}=          Get Length    ${sessions}
     Should Be Equal As Integers    ${count}    0
 
-    # Cleanup
-    Cleanup Test Chat Session    ${admin_chat_session}[session_id]
     Delete User    api    ${test_user}[id]
 

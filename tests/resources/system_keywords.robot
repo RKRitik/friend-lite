@@ -14,7 +14,7 @@ Documentation    Health check and service readiness verification keywords
 ...              - Data management (belong in test_manager_keywords.robot)
 ...              - User/session management (belong in respective resource files)
 Library          RequestsLibrary
-Variables        test_env.py
+Variables        ../setup/test_env.py
 
 
 *** Keywords ***
@@ -24,7 +24,7 @@ Readiness Check
     [Tags]             health    api
     [Arguments]        ${base_url}=${API_URL}
 
-    ${response}=    GET    ${base_url}/readiness    expected_status=200
+    ${response}=    GET    ${base_url}/readiness    expected_status=200    timeout=2
     Should Be Equal As Integers    ${response.status_code}    200
     RETURN    ${True}
 
@@ -33,6 +33,6 @@ Health Check
     [Tags]             health    api
     [Arguments]        ${base_url}=${API_URL}
 
-    ${response}=    GET    ${base_url}/health    expected_status=200
+    ${response}=    GET    ${base_url}/health    expected_status=200    timeout=2
     Should Be Equal As Integers    ${response.status_code}    200
     RETURN    ${True}
