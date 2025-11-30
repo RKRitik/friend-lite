@@ -46,7 +46,7 @@ async def process_memory_job(
         Dict with processing results
     """
     from advanced_omi_backend.models.conversation import Conversation
-    from advanced_omi_backend.memory import get_memory_service
+    from advanced_omi_backend.services.memory import get_memory_service
     from advanced_omi_backend.users import get_user_by_id
 
     start_time = time.time()
@@ -142,7 +142,7 @@ async def process_memory_job(
                 # Determine memory provider from memory service
                 memory_provider = conversation_model.MemoryProvider.FRIEND_LITE  # Default
                 try:
-                    from advanced_omi_backend.memory import get_memory_service
+                    from advanced_omi_backend.services.memory import get_memory_service
                     memory_service_obj = get_memory_service()
                     provider_name = memory_service_obj.__class__.__name__
                     if "OpenMemory" in provider_name:

@@ -27,7 +27,7 @@ migrate_from_mem0 = None
 
 memory_logger.info("🆕 Using NEW memory service implementation")
 try:
-    from .compat_service import (
+    from .providers.compat_service import (
         MemoryService,
         get_memory_service,
         migrate_from_mem0,
@@ -35,7 +35,7 @@ try:
     )
 
     # Also import core implementation for direct access
-    from .memory_service import MemoryService as CoreMemoryService
+    from .providers.friend_lite import MemoryService as CoreMemoryService
     test_new_memory_service = None  # Will be implemented if needed
 except ImportError as e:
     memory_logger.error(f"Failed to import new memory service: {e}")
@@ -55,8 +55,10 @@ try:
         create_openai_config,
         create_qdrant_config,
     )
-    from .providers import OpenMemoryMCPService  # New complete memory service
-    from .providers import MCPClient, MCPError, OpenAIProvider, QdrantVectorStore
+    from .providers.openmemory_mcp import OpenMemoryMCPService  # New complete memory service
+    from .providers.mcp_client import MCPClient, MCPError
+    from .providers.llm_providers import OpenAIProvider
+    from .providers.vector_stores import QdrantVectorStore
     from .service_factory import create_memory_service
     from .service_factory import get_memory_service as get_core_memory_service
     from .service_factory import get_service_info as get_core_service_info

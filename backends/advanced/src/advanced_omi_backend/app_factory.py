@@ -30,7 +30,7 @@ from advanced_omi_backend.users import (
     register_client_to_user,
 )
 from advanced_omi_backend.client_manager import get_client_manager
-from advanced_omi_backend.memory import get_memory_service, shutdown_memory_service
+from advanced_omi_backend.services.memory import get_memory_service, shutdown_memory_service
 from advanced_omi_backend.middleware.app_middleware import setup_middleware
 from advanced_omi_backend.routers.api_router import router as api_router
 from advanced_omi_backend.routers.modules.health_routes import router as health_router

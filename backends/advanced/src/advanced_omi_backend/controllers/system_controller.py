@@ -442,8 +442,8 @@ async def reload_memory_config():
 async def delete_all_user_memories(user: User):
     """Delete all memories for the current user."""
     try:
-        from advanced_omi_backend.memory import get_memory_service
-        
+        from advanced_omi_backend.services.memory import get_memory_service
+
         memory_service = get_memory_service()
         
         # Delete all memories for the user

@@ -38,21 +38,33 @@ def create_memory_service(config: MemoryConfig) -> MemoryServiceBase:
     
     if config.memory_provider == MemoryProvider.FRIEND_LITE:
         # Use the sophisticated Friend-Lite implementation
-        from .memory_service import MemoryService as FriendLiteMemoryService
+        from .providers.friend_lite import MemoryService as FriendLiteMemoryService
         return FriendLiteMemoryService(config)
-        
+
     elif config.memory_provider == MemoryProvider.OPENMEMORY_MCP:
         # Use OpenMemory MCP implementation
         try:
-            from .providers.openmemory_mcp_service import OpenMemoryMCPService
+            from .providers.openmemory_mcp import OpenMemoryMCPService
         except ImportError as e:
             raise RuntimeError(f"OpenMemory MCP service not available: {e}")
-        
+
         if not config.openmemory_config:
             raise ValueError("OpenMemory configuration is required for OPENMEMORY_MCP provider")
-        
+
         return OpenMemoryMCPService(**config.openmemory_config)
-        
+
+    elif config.memory_provider == MemoryProvider.MYCELIA:
+        # Use Mycelia implementation
+        try:
+            from .providers.mycelia import MyceliaMemoryService
+        except ImportError as e:
+            raise RuntimeError(f"Mycelia memory service not available: {e}")
+
+        if not config.mycelia_config:
+            raise ValueError("Mycelia configuration is required for MYCELIA provider")
+
+        return MyceliaMemoryService(**config.mycelia_config)
+
     else:
         raise ValueError(f"Unsupported memory provider: {config.memory_provider}")
 

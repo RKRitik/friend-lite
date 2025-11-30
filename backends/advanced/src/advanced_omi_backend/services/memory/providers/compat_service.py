@@ -10,8 +10,8 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from .config import build_memory_config_from_env
-from .memory_service import MemoryService as CoreMemoryService
+from ..config import build_memory_config_from_env
+from .friend_lite import MemoryService as CoreMemoryService
 
 memory_logger = logging.getLogger("memory_service")
 
@@ -395,8 +395,8 @@ def get_memory_service() -> MemoryService:
     global _memory_service
     if _memory_service is None:
         # Use the new service factory to create the appropriate service
-        from .service_factory import get_memory_service as get_core_service
-        
+        from ..service_factory import get_memory_service as get_core_service
+
         core_service = get_core_service()
         
         # If it's already a compat service, use it directly
