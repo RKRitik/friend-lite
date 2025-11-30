@@ -36,6 +36,7 @@ class MemoryProvider(Enum):
     """Supported memory service providers."""
     FRIEND_LITE = "friend_lite"      # Default sophisticated implementation
     OPENMEMORY_MCP = "openmemory_mcp"  # OpenMemory MCP backend
+    MYCELIA = "mycelia"                # Mycelia memory backend
 
 
 @dataclass
@@ -48,6 +49,7 @@ class MemoryConfig:
     vector_store_config: Dict[str, Any] = None
     embedder_config: Dict[str, Any] = None
     openmemory_config: Dict[str, Any] = None  # Configuration for OpenMemory MCP
+    mycelia_config: Dict[str, Any] = None  # Configuration for Mycelia
     extraction_prompt: str = None
     extraction_enabled: bool = True
     timeout_seconds: int = 1200
@@ -120,6 +122,23 @@ def create_openmemory_config(
         "user_id": user_id,
         "timeout": timeout
     }
+
+
+def create_mycelia_config(
+    api_url: str = "http://localhost:8080",
+    api_key: str = None,
+    timeout: int = 30,
+    **kwargs
+) -> Dict[str, Any]:
+    """Create Mycelia configuration."""
+    config = {
+        "api_url": api_url,
+        "timeout": timeout,
+    }
+    if api_key:
+        config["api_key"] = api_key
+    config.update(kwargs)
+    return config
 
 
 def build_memory_config_from_env() -> MemoryConfig:

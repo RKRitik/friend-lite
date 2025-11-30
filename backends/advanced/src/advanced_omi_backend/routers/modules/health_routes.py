@@ -18,7 +18,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from advanced_omi_backend.controllers.queue_controller import redis_conn
 from advanced_omi_backend.client_manager import get_client_manager
 from advanced_omi_backend.llm_client import async_health_check
-from advanced_omi_backend.memory import get_memory_service
+from advanced_omi_backend.services.memory import get_memory_service
 from advanced_omi_backend.services.transcription import get_transcription_provider
 
 # Create router

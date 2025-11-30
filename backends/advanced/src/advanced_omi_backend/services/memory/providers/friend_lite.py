@@ -11,15 +11,11 @@ import time
 import uuid
 from typing import Any, List, Optional, Tuple
 
-from .base import MemoryEntry, MemoryServiceBase
-from .config import LLMProvider as LLMProviderEnum
-from .config import MemoryConfig, VectorStoreProvider
-from .providers import (
-    LLMProviderBase,
-    OpenAIProvider,
-    QdrantVectorStore,
-    VectorStoreBase,
-)
+from ..base import LLMProviderBase, MemoryEntry, MemoryServiceBase, VectorStoreBase
+from ..config import LLMProvider as LLMProviderEnum
+from ..config import MemoryConfig, VectorStoreProvider
+from .llm_providers import OpenAIProvider
+from .vector_stores import QdrantVectorStore
 
 memory_logger = logging.getLogger("memory_service")
 
