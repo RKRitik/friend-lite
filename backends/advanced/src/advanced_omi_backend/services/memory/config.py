@@ -168,18 +168,34 @@ def build_memory_config_from_env() -> MemoryConfig:
                 timeout_seconds=int(os.getenv("OPENMEMORY_TIMEOUT", "30"))
             )
 
-        # For Mycelia provider, configuration is simple - just URL
+        # For Mycelia provider, build mycelia_config + llm_config (for temporal extraction)
         if memory_provider_enum == MemoryProvider.MYCELIA:
             mycelia_config = create_mycelia_config(
                 api_url=os.getenv("MYCELIA_URL", "http://localhost:5173"),
                 timeout=int(os.getenv("MYCELIA_TIMEOUT", "30"))
             )
 
+            # Build LLM config for temporal extraction (Mycelia provider uses OpenAI directly)
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if not openai_api_key:
+                memory_logger.warning("OPENAI_API_KEY not set - temporal extraction will be disabled")
+                llm_config = None
+            else:
+                model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+                base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+                llm_config = create_openai_config(
+                    api_key=openai_api_key,
+                    model=model,
+                    base_url=base_url
+                )
+                memory_logger.info(f"🔧 Mycelia temporal extraction: LLM={model}")
+
             memory_logger.info(f"🔧 Memory config: Provider=Mycelia, URL={mycelia_config['api_url']}")
 
             return MemoryConfig(
                 memory_provider=memory_provider_enum,
                 mycelia_config=mycelia_config,
+                llm_config=llm_config,
                 timeout_seconds=int(os.getenv("MYCELIA_TIMEOUT", "30"))
             )
         
