@@ -5,7 +5,7 @@ import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
 import Chat from './pages/Chat'
 import Conversations from './pages/Conversations'
-import Memories from './pages/Memories'
+import MemoriesRouter from './pages/MemoriesRouter'
 import Users from './pages/Users'
 import System from './pages/System'
 import Upload from './pages/Upload'
@@ -51,7 +51,7 @@ function App() {
                 } />
                 <Route path="memories" element={
                   <PageErrorBoundary>
-                    <Memories />
+                    <MemoriesRouter />
                   </PageErrorBoundary>
                 } />
                 <Route path="users" element={

@@ -159,13 +159,28 @@ def build_memory_config_from_env() -> MemoryConfig:
                 user_id=os.getenv("OPENMEMORY_USER_ID", "default"),
                 timeout=int(os.getenv("OPENMEMORY_TIMEOUT", "30"))
             )
-            
+
             memory_logger.info(f"🔧 Memory config: Provider=OpenMemory MCP, URL={openmemory_config['server_url']}")
-            
+
             return MemoryConfig(
                 memory_provider=memory_provider_enum,
                 openmemory_config=openmemory_config,
                 timeout_seconds=int(os.getenv("OPENMEMORY_TIMEOUT", "30"))
+            )
+
+        # For Mycelia provider, configuration is simple - just URL
+        if memory_provider_enum == MemoryProvider.MYCELIA:
+            mycelia_config = create_mycelia_config(
+                api_url=os.getenv("MYCELIA_URL", "http://localhost:5173"),
+                timeout=int(os.getenv("MYCELIA_TIMEOUT", "30"))
+            )
+
+            memory_logger.info(f"🔧 Memory config: Provider=Mycelia, URL={mycelia_config['api_url']}")
+
+            return MemoryConfig(
+                memory_provider=memory_provider_enum,
+                mycelia_config=mycelia_config,
+                timeout_seconds=int(os.getenv("MYCELIA_TIMEOUT", "30"))
             )
         
         # For Friend-Lite provider, use existing complex configuration
