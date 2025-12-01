@@ -63,7 +63,8 @@ def create_memory_service(config: MemoryConfig) -> MemoryServiceBase:
         if not config.mycelia_config:
             raise ValueError("Mycelia configuration is required for MYCELIA provider")
 
-        return MyceliaMemoryService(**config.mycelia_config)
+        # Pass the full config so Mycelia can access llm_config
+        return MyceliaMemoryService(config)
 
     else:
         raise ValueError(f"Unsupported memory provider: {config.memory_provider}")
