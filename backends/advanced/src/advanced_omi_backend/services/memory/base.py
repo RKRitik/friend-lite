@@ -163,12 +163,14 @@ class MemoryServiceBase(ABC):
         return None
     
     @abstractmethod
-    async def delete_memory(self, memory_id: str) -> bool:
+    async def delete_memory(self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None) -> bool:
         """Delete a specific memory by ID.
-        
+
         Args:
             memory_id: Unique identifier of the memory to delete
-            
+            user_id: Optional user ID for authentication (required for Mycelia provider)
+            user_email: Optional user email for authentication (required for Mycelia provider)
+
         Returns:
             True if successfully deleted, False otherwise
         """

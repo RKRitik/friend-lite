@@ -6,7 +6,7 @@ OpenMemory servers using REST API endpoints for memory operations.
 
 import logging
 import uuid
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import httpx
 
 memory_logger = logging.getLogger("memory_service")
@@ -339,7 +339,7 @@ class MCPClient:
             memory_logger.error(f"Error deleting all memories: {e}")
             return 0
     
-    async def delete_memory(self, memory_id: str) -> bool:
+    async def delete_memory(self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None) -> bool:
         """Delete a specific memory by ID.
         
         Args:

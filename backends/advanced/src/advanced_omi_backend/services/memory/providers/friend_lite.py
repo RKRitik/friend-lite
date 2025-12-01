@@ -291,7 +291,7 @@ class MemoryService(MemoryServiceBase):
             memory_logger.error(f"Count memories failed: {e}")
             return None
 
-    async def delete_memory(self, memory_id: str) -> bool:
+    async def delete_memory(self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None) -> bool:
         """Delete a specific memory by ID.
         
         Args:
