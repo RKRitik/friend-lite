@@ -499,6 +499,11 @@ async def stream_speech_detection_job(
 
     # Main loop: Listen for speech
     while True:
+        # Check if job still exists in Redis (detect zombie state)
+        from advanced_omi_backend.utils.job_utils import check_job_alive
+        if not await check_job_alive(redis_client, current_job):
+            break
+
         # Exit conditions
         session_status = await redis_client.hget(session_key, "status")
         if session_status and session_status.decode() in ["complete", "closed"]:
