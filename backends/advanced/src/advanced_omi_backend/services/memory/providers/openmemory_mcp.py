@@ -283,7 +283,7 @@ class OpenMemoryMCPService(MemoryServiceBase):
             # Restore original user_id
             self.mcp_client.user_id = original_user_id
     
-    async def delete_memory(self, memory_id: str) -> bool:
+    async def delete_memory(self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None) -> bool:
         """Delete a specific memory by ID.
         
         Args:

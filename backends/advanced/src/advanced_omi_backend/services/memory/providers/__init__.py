@@ -7,7 +7,6 @@ This package contains all memory service provider implementations:
 - llm_providers: LLM provider implementations (OpenAI, Ollama)
 - vector_stores: Vector store implementations (Qdrant)
 - mcp_client: MCP client utilities
-- compat_service: Backward compatibility wrapper
 """
 
 from .friend_lite import MemoryService as FriendLiteMemoryService
@@ -16,7 +15,6 @@ from .mycelia import MyceliaMemoryService
 from .llm_providers import OpenAIProvider
 from .vector_stores import QdrantVectorStore
 from .mcp_client import MCPClient, MCPError
-from .compat_service import MemoryService
 
 __all__ = [
     "FriendLiteMemoryService",
@@ -26,5 +24,4 @@ __all__ = [
     "QdrantVectorStore",
     "MCPClient",
     "MCPError",
-    "MemoryService",
 ]
