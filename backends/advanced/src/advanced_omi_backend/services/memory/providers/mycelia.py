@@ -5,7 +5,9 @@ that uses Mycelia as the backend for all memory operations.
 """
 
 import logging
-from typing import Any, List, Optional, Tuple
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+import httpx
 
 from ..base import MemoryEntry, MemoryServiceBase
 
@@ -16,11 +18,10 @@ class MyceliaMemoryService(MemoryServiceBase):
     """Memory service implementation using Mycelia backend.
 
     This class implements the MemoryServiceBase interface by delegating memory
-    operations to a Mycelia server.
+    operations to a Mycelia server using JWT authentication from Friend-Lite.
 
     Args:
         api_url: Mycelia API endpoint URL
-        api_key: Optional API key for authentication
         timeout: Request timeout in seconds
         **kwargs: Additional configuration parameters
     """
@@ -28,7 +29,6 @@ class MyceliaMemoryService(MemoryServiceBase):
     def __init__(
         self,
         api_url: str = "http://localhost:8080",
-        api_key: Optional[str] = None,
         timeout: int = 30,
         **kwargs
     ):
@@ -36,27 +36,34 @@ class MyceliaMemoryService(MemoryServiceBase):
 
         Args:
             api_url: Mycelia API endpoint
-            api_key: Optional API key for authentication
             timeout: Request timeout in seconds
             **kwargs: Additional configuration parameters
         """
-        self.api_url = api_url
-        self.api_key = api_key
+        self.api_url = api_url.rstrip("/")
         self.timeout = timeout
         self.config = kwargs
         self._initialized = False
+        self._client: Optional[httpx.AsyncClient] = None
 
         memory_logger.info(f"🍄 Initializing Mycelia memory service at {api_url}")
 
     async def initialize(self) -> None:
         """Initialize Mycelia client and verify connection."""
         try:
-            # TODO: Initialize your Mycelia client here
-            # Example: self.client = MyceliaClient(self.api_url, self.api_key)
+            # Initialize HTTP client
+            self._client = httpx.AsyncClient(
+                base_url=self.api_url,
+                timeout=self.timeout,
+                headers={"Content-Type": "application/json"}
+            )
 
-            # Test connection
-            if not await self.test_connection():
-                raise RuntimeError("Failed to connect to Mycelia service")
+            # Test connection directly (without calling test_connection to avoid recursion)
+            try:
+                response = await self._client.get("/health")
+                if response.status_code != 200:
+                    raise RuntimeError(f"Health check failed with status {response.status_code}")
+            except httpx.HTTPError as e:
+                raise RuntimeError(f"Failed to connect to Mycelia service: {e}")
 
             self._initialized = True
             memory_logger.info("✅ Mycelia memory service initialized successfully")
@@ -64,6 +71,109 @@ class MyceliaMemoryService(MemoryServiceBase):
         except Exception as e:
             memory_logger.error(f"❌ Failed to initialize Mycelia service: {e}")
             raise RuntimeError(f"Mycelia initialization failed: {e}")
+
+    async def _get_user_jwt(self, user_id: str, user_email: Optional[str] = None) -> str:
+        """Get JWT token for a user (with optional user lookup).
+
+        Args:
+            user_id: User ID
+            user_email: Optional user email (will lookup if not provided)
+
+        Returns:
+            JWT token string
+
+        Raises:
+            ValueError: If user not found
+        """
+        from advanced_omi_backend.auth import generate_jwt_for_user
+
+        # If email not provided, lookup user
+        if not user_email:
+            from advanced_omi_backend.users import User
+            user = await User.get(user_id)
+            if not user:
+                raise ValueError(f"User {user_id} not found")
+            user_email = user.email
+
+        return generate_jwt_for_user(user_id, user_email)
+
+    @staticmethod
+    def _extract_bson_id(raw_id: Any) -> str:
+        """Extract ID from Mycelia BSON format {"$oid": "..."} or plain string."""
+        if isinstance(raw_id, dict) and "$oid" in raw_id:
+            return raw_id["$oid"]
+        return str(raw_id)
+
+    @staticmethod
+    def _extract_bson_date(date_obj: Any) -> Any:
+        """Extract date from Mycelia BSON format {"$date": "..."} or plain value."""
+        if isinstance(date_obj, dict) and "$date" in date_obj:
+            return date_obj["$date"]
+        return date_obj
+
+    def _mycelia_object_to_memory_entry(self, obj: Dict, user_id: str) -> MemoryEntry:
+        """Convert Mycelia object to MemoryEntry.
+
+        Args:
+            obj: Mycelia object from API
+            user_id: User ID for metadata
+
+        Returns:
+            MemoryEntry object
+        """
+        memory_id = self._extract_bson_id(obj.get("_id", ""))
+        memory_content = obj.get("details", "")
+
+        return MemoryEntry(
+            id=memory_id,
+            content=memory_content,
+            metadata={
+                "user_id": user_id,
+                "name": obj.get("name", ""),
+                "aliases": obj.get("aliases", []),
+                "created_at": self._extract_bson_date(obj.get("createdAt")),
+                "updated_at": self._extract_bson_date(obj.get("updatedAt")),
+            },
+            created_at=self._extract_bson_date(obj.get("createdAt"))
+        )
+
+    async def _call_resource(
+        self,
+        action: str,
+        jwt_token: str,
+        **params
+    ) -> Dict[str, Any]:
+        """Call Mycelia objects resource with JWT authentication.
+
+        Args:
+            action: Action to perform (create, list, get, delete, etc.)
+            jwt_token: User's JWT token from Friend-Lite
+            **params: Additional parameters for the action
+
+        Returns:
+            Response data from Mycelia
+
+        Raises:
+            RuntimeError: If API call fails
+        """
+        if not self._client:
+            raise RuntimeError("Mycelia client not initialized")
+
+        try:
+            response = await self._client.post(
+                "/api/resource/tech.mycelia.objects",
+                json={"action": action, **params},
+                headers={"Authorization": f"Bearer {jwt_token}"}
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPStatusError as e:
+            memory_logger.error(f"Mycelia API error: {e.response.status_code} - {e.response.text}")
+            raise RuntimeError(f"Mycelia API error: {e.response.status_code}")
+        except Exception as e:
+            memory_logger.error(f"Failed to call Mycelia resource: {e}")
+            raise RuntimeError(f"Mycelia API call failed: {e}")
 
     async def add_memory(
         self,
@@ -90,21 +200,37 @@ class MyceliaMemoryService(MemoryServiceBase):
             Tuple of (success: bool, created_memory_ids: List[str])
         """
         try:
-            # TODO: Implement your Mycelia API call to add memories
-            # Example implementation:
-            # response = await self.client.add_memories(
-            #     transcript=transcript,
-            #     user_id=user_id,
-            #     metadata={
-            #         "client_id": client_id,
-            #         "source_id": source_id,
-            #         "user_email": user_email,
-            #     }
-            # )
-            # return (True, response.memory_ids)
+            # Generate JWT token for this user
+            jwt_token = await self._get_user_jwt(user_id, user_email)
 
-            memory_logger.warning("Mycelia add_memory not yet implemented")
-            return (False, [])
+            # Create a Mycelia object for this memory
+            # Memory content is stored in the 'details' field
+            memory_preview = transcript[:50] + ("..." if len(transcript) > 50 else "")
+
+            object_data = {
+                "name": f"Memory: {memory_preview}",
+                "details": transcript,
+                "aliases": [source_id, client_id],  # Searchable by source or client
+                "isPerson": False,
+                "isPromise": False,
+                "isEvent": False,
+                "isRelationship": False,
+                # Note: userId is auto-injected by Mycelia from JWT
+            }
+
+            result = await self._call_resource(
+                action="create",
+                jwt_token=jwt_token,
+                object=object_data
+            )
+
+            memory_id = result.get("insertedId")
+            if memory_id:
+                memory_logger.info(f"✅ Created Mycelia memory object: {memory_id}")
+                return (True, [memory_id])
+            else:
+                memory_logger.error("Failed to create Mycelia memory: no insertedId returned")
+                return (False, [])
 
         except Exception as e:
             memory_logger.error(f"Failed to add memory via Mycelia: {e}")
@@ -124,28 +250,39 @@ class MyceliaMemoryService(MemoryServiceBase):
         Returns:
             List of matching MemoryEntry objects ordered by relevance
         """
-        try:
-            # TODO: Implement Mycelia search
-            # Example implementation:
-            # results = await self.client.search(
-            #     query=query,
-            #     user_id=user_id,
-            #     limit=limit,
-            #     threshold=score_threshold
-            # )
-            # return [
-            #     MemoryEntry(
-            #         id=r.id,
-            #         memory=r.text,
-            #         user_id=user_id,
-            #         metadata=r.metadata,
-            #         score=r.score
-            #     )
-            #     for r in results
-            # ]
+        if not self._initialized:
+            await self.initialize()
 
-            memory_logger.warning("Mycelia search_memories not yet implemented")
-            return []
+        try:
+            # Generate JWT token for this user
+            jwt_token = await self._get_user_jwt(user_id)
+
+            # Search using Mycelia's list action with searchTerm option
+            result = await self._call_resource(
+                action="list",
+                jwt_token=jwt_token,
+                filters={},  # Auto-scoped by userId in Mycelia
+                options={
+                    "searchTerm": query,
+                    "limit": limit,
+                    "sort": {"updatedAt": -1}  # Most recent first
+                }
+            )
+
+            # Convert Mycelia objects to MemoryEntry objects
+            memories = []
+            for i, obj in enumerate(result):
+                # Calculate a simple relevance score (0-1) based on position
+                # (Mycelia doesn't provide semantic similarity scores yet)
+                score = 1.0 - (i * 0.1)  # Decaying score
+                if score < score_threshold:
+                    continue
+
+                entry = self._mycelia_object_to_memory_entry(obj, user_id)
+                entry.score = score  # Override score
+                memories.append(entry)
+
+            return memories
 
         except Exception as e:
             memory_logger.error(f"Failed to search memories via Mycelia: {e}")
@@ -163,22 +300,27 @@ class MyceliaMemoryService(MemoryServiceBase):
         Returns:
             List of MemoryEntry objects for the user
         """
-        try:
-            # TODO: Implement Mycelia get all
-            # Example implementation:
-            # results = await self.client.get_all(user_id=user_id, limit=limit)
-            # return [
-            #     MemoryEntry(
-            #         id=r.id,
-            #         memory=r.text,
-            #         user_id=user_id,
-            #         metadata=r.metadata
-            #     )
-            #     for r in results
-            # ]
+        if not self._initialized:
+            await self.initialize()
 
-            memory_logger.warning("Mycelia get_all_memories not yet implemented")
-            return []
+        try:
+            # Generate JWT token for this user
+            jwt_token = await self._get_user_jwt(user_id)
+
+            # List all objects for this user (auto-scoped by Mycelia)
+            result = await self._call_resource(
+                action="list",
+                jwt_token=jwt_token,
+                filters={},  # Auto-scoped by userId
+                options={
+                    "limit": limit,
+                    "sort": {"updatedAt": -1}  # Most recent first
+                }
+            )
+
+            # Convert Mycelia objects to MemoryEntry objects
+            memories = [self._mycelia_object_to_memory_entry(obj, user_id) for obj in result]
+            return memories
 
         except Exception as e:
             memory_logger.error(f"Failed to get memories via Mycelia: {e}")
@@ -193,34 +335,67 @@ class MyceliaMemoryService(MemoryServiceBase):
         Returns:
             Total count of memories for the user, or None if not supported
         """
-        try:
-            # TODO: Implement if Mycelia supports efficient counting
-            # Example:
-            # return await self.client.count(user_id=user_id)
+        if not self._initialized:
+            await self.initialize()
 
-            return None  # Not implemented yet
+        try:
+            # Generate JWT token for this user
+            jwt_token = await self._get_user_jwt(user_id)
+
+            # Use Mycelia's mongo resource to count objects for this user
+            if not self._client:
+                raise RuntimeError("Mycelia client not initialized")
+
+            response = await self._client.post(
+                "/api/resource/tech.mycelia.mongo",
+                json={
+                    "action": "count",
+                    "collection": "objects",
+                    "query": {"userId": user_id}
+                },
+                headers={"Authorization": f"Bearer {jwt_token}"}
+            )
+            response.raise_for_status()
+            return response.json()
 
         except Exception as e:
             memory_logger.error(f"Failed to count memories via Mycelia: {e}")
             return None
 
-    async def delete_memory(self, memory_id: str) -> bool:
+    async def delete_memory(self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None) -> bool:
         """Delete a specific memory from Mycelia.
 
         Args:
             memory_id: Unique identifier of the memory to delete
+            user_id: Optional user identifier for authentication
+            user_email: Optional user email for authentication
 
         Returns:
             True if successfully deleted, False otherwise
         """
         try:
-            # TODO: Implement Mycelia delete
-            # Example:
-            # success = await self.client.delete(memory_id=memory_id)
-            # return success
+            # Need user credentials for JWT - if not provided, we can't delete
+            if not user_id:
+                memory_logger.error("User ID required for Mycelia delete operation")
+                return False
 
-            memory_logger.warning("Mycelia delete_memory not yet implemented")
-            return False
+            # Generate JWT token for this user
+            jwt_token = await self._get_user_jwt(user_id, user_email)
+
+            # Delete the object (auto-scoped by userId in Mycelia)
+            result = await self._call_resource(
+                action="delete",
+                jwt_token=jwt_token,
+                id=memory_id
+            )
+
+            deleted_count = result.get("deletedCount", 0)
+            if deleted_count > 0:
+                memory_logger.info(f"✅ Deleted Mycelia memory object: {memory_id}")
+                return True
+            else:
+                memory_logger.warning(f"No memory deleted with ID: {memory_id}")
+                return False
 
         except Exception as e:
             memory_logger.error(f"Failed to delete memory via Mycelia: {e}")
@@ -236,13 +411,26 @@ class MyceliaMemoryService(MemoryServiceBase):
             Number of memories that were deleted
         """
         try:
-            # TODO: Implement Mycelia bulk delete
-            # Example:
-            # count = await self.client.delete_all(user_id=user_id)
-            # return count
+            # Generate JWT token for this user
+            jwt_token = await self._get_user_jwt(user_id)
 
-            memory_logger.warning("Mycelia delete_all_user_memories not yet implemented")
-            return 0
+            # First, get all memory IDs for this user
+            result = await self._call_resource(
+                action="list",
+                jwt_token=jwt_token,
+                filters={},  # Auto-scoped by userId
+                options={"limit": 10000}  # Large limit to get all
+            )
+
+            # Delete each memory individually
+            deleted_count = 0
+            for obj in result:
+                memory_id = self._extract_bson_id(obj.get("_id", ""))
+                if await self.delete_memory(memory_id, user_id):
+                    deleted_count += 1
+
+            memory_logger.info(f"✅ Deleted {deleted_count} Mycelia memories for user {user_id}")
+            return deleted_count
 
         except Exception as e:
             memory_logger.error(f"Failed to delete user memories via Mycelia: {e}")
@@ -255,13 +443,15 @@ class MyceliaMemoryService(MemoryServiceBase):
             True if connection is healthy, False otherwise
         """
         try:
-            # TODO: Implement health check
-            # Example:
-            # return await self.client.health_check()
+            if not self._initialized:
+                await self.initialize()
 
-            # For now, just check if URL is set
-            memory_logger.warning("Mycelia test_connection not fully implemented (stub)")
-            return self.api_url is not None
+            if not self._client:
+                return False
+
+            # Test connection by hitting a lightweight endpoint
+            response = await self._client.get("/health")
+            return response.status_code == 200
 
         except Exception as e:
             memory_logger.error(f"Mycelia connection test failed: {e}")
@@ -270,8 +460,8 @@ class MyceliaMemoryService(MemoryServiceBase):
     def shutdown(self) -> None:
         """Shutdown Mycelia client and cleanup resources."""
         memory_logger.info("Shutting down Mycelia memory service")
-        # TODO: Cleanup if needed
-        # Example:
-        # if hasattr(self, 'client'):
-        #     self.client.close()
+        if self._client:
+            # Note: httpx AsyncClient should be closed in an async context
+            # In practice, this will be called during shutdown so we log a warning
+            memory_logger.warning("HTTP client should be closed with await client.aclose()")
         self._initialized = False

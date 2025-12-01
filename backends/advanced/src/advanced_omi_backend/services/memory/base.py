@@ -49,6 +49,19 @@ class MemoryEntry:
         if self.created_at is None:
             self.created_at = str(int(time.time()))
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert MemoryEntry to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "memory": self.content,  # Frontend expects 'memory' key
+            "content": self.content,  # Also provide 'content' for consistency
+            "metadata": self.metadata,
+            "embedding": self.embedding,
+            "score": self.score,
+            "created_at": self.created_at,
+            "user_id": self.metadata.get("user_id")  # Extract user_id from metadata
+        }
+
 
 class MemoryServiceBase(ABC):
     """Abstract base class defining the core memory service interface.

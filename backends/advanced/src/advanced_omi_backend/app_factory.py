@@ -73,6 +73,13 @@ async def lifespan(app: FastAPI):
         application_logger.error(f"Failed to create admin user: {e}")
         # Don't raise here as this is not critical for startup
 
+    # Sync admin user with Mycelia OAuth (if using Mycelia memory provider)
+    try:
+        from advanced_omi_backend.services.mycelia_sync import sync_admin_on_startup
+        await sync_admin_on_startup()
+    except Exception as e:
+        application_logger.error(f"Failed to sync admin with Mycelia OAuth: {e}")
+        # Don't raise here as this is not critical for startup
 
     # Initialize Redis connection for RQ
     try:
