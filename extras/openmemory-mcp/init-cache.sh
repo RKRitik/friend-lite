@@ -3,7 +3,7 @@
 
 CACHE_DIR="./cache/mem0"
 FORK_REPO="https://github.com/AnkushMalaker/mem0.git"
-BRANCH="main"
+BRANCH="fix/get-endpoint"
 
 echo "🔄 Updating OpenMemory cache from fork..."
 
