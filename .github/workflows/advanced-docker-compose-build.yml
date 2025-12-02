@@ -116,6 +116,13 @@ jobs:
           else
             VERSION="sha-${GITHUB_SHA::7}"
           fi
+          
+          # Sanitize: Ensure version doesn't start with a hyphen (invalid for docker tags)
+          if [[ "$VERSION" == -* ]]; then
+            echo "Warning: Version '$VERSION' starts with a hyphen. Prepending 'v'."
+            VERSION="v${VERSION}"
+          fi
+          
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build, tag, and push services sequentially with version
