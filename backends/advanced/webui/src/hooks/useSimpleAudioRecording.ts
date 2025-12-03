@@ -58,8 +58,8 @@ export const useSimpleAudioRecording = (): SimpleAudioRecordingReturn => {
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
-  const durationIntervalRef = useRef<number>()
-  const keepAliveIntervalRef = useRef<number>()
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval>>()
+  const keepAliveIntervalRef = useRef<ReturnType<typeof setInterval>>()
   const chunkCountRef = useRef(0)
   const audioProcessingStartedRef = useRef(false)
   
