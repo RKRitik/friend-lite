@@ -138,15 +138,19 @@ export const systemApi = {
   
   // Memory Configuration Management
   getMemoryConfigRaw: () => api.get('/api/admin/memory/config/raw'),
-  updateMemoryConfigRaw: (configYaml: string) => 
+  updateMemoryConfigRaw: (configYaml: string) =>
     api.post('/api/admin/memory/config/raw', configYaml, {
       headers: { 'Content-Type': 'text/plain' }
     }),
-  validateMemoryConfig: (configYaml: string) => 
+  validateMemoryConfig: (configYaml: string) =>
     api.post('/api/admin/memory/config/validate', configYaml, {
       headers: { 'Content-Type': 'text/plain' }
     }),
   reloadMemoryConfig: () => api.post('/api/admin/memory/config/reload'),
+
+  // Memory Provider Management
+  getMemoryProvider: () => api.get('/api/admin/memory/provider'),
+  setMemoryProvider: (provider: string) => api.post('/api/admin/memory/provider', { provider }),
 }
 
 export const queueApi = {
