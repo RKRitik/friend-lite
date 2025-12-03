@@ -150,18 +150,59 @@ class MemoryServiceBase(ABC):
     
     async def count_memories(self, user_id: str) -> Optional[int]:
         """Count total number of memories for a user.
-        
+
         This is an optional method that providers can implement for efficient
         counting. Returns None if the provider doesn't support counting.
-        
+
         Args:
             user_id: User identifier
-            
+
         Returns:
             Total count of memories for the user, or None if not supported
         """
         return None
-    
+
+    async def get_memory(self, memory_id: str, user_id: Optional[str] = None) -> Optional[MemoryEntry]:
+        """Get a specific memory by ID.
+
+        This is an optional method that providers can implement for fetching
+        individual memories. Returns None if the provider doesn't support it
+        or the memory is not found.
+
+        Args:
+            memory_id: Unique identifier of the memory to retrieve
+            user_id: Optional user ID for authentication/filtering
+
+        Returns:
+            MemoryEntry object if found, None otherwise
+        """
+        return None
+
+    async def update_memory(
+        self,
+        memory_id: str,
+        content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        user_email: Optional[str] = None
+    ) -> bool:
+        """Update a specific memory's content and/or metadata.
+
+        This is an optional method that providers can implement for updating
+        existing memories. Returns False if not supported or update fails.
+
+        Args:
+            memory_id: Unique identifier of the memory to update
+            content: New content for the memory (if None, content is not updated)
+            metadata: New metadata to merge with existing (if None, metadata is not updated)
+            user_id: Optional user ID for authentication
+            user_email: Optional user email for authentication
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        return False
+
     @abstractmethod
     async def delete_memory(self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None) -> bool:
         """Delete a specific memory by ID.
@@ -204,6 +245,27 @@ class MemoryServiceBase(ABC):
         if they need to perform cleanup operations.
         """
         pass
+
+    def __init__(self):
+        """Initialize base memory service state.
+        
+        Subclasses should call super().__init__() in their constructors.
+        """
+        self._initialized = False
+    
+    async def _ensure_initialized(self) -> None:
+        """Ensure the memory service is initialized before use.
+        
+        This method provides lazy initialization - it will automatically
+        call initialize() the first time it's needed. This is critical
+        for services used in RQ workers where the service instance is
+        created in one process but used in another.
+        
+        This should be called at the start of any method that requires
+        the service to be initialized (e.g., add_memory, search_memories).
+        """
+        if not self._initialized:
+            await self.initialize()
 
 
 class LLMProviderBase(ABC):

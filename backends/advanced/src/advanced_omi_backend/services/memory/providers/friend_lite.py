@@ -45,10 +45,10 @@ class MemoryService(MemoryServiceBase):
         Args:
             config: MemoryConfig instance with provider settings
         """
+        super().__init__()
         self.config = config
         self.llm_provider: Optional[LLMProviderBase] = None
         self.vector_store: Optional[VectorStoreBase] = None
-        self._initialized = False
 
     async def initialize(self) -> None:
         """Initialize the memory service and all its components.
@@ -129,8 +129,7 @@ class MemoryService(MemoryServiceBase):
         Raises:
             asyncio.TimeoutError: If processing exceeds timeout
         """
-        if not self._initialized:
-            await self.initialize()
+        await self._ensure_initialized()
 
         try:
             # Skip empty transcripts
