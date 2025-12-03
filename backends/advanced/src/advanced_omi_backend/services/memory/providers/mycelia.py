@@ -4,14 +4,39 @@ This module provides a concrete implementation of the MemoryServiceBase interfac
 that uses Mycelia as the backend for all memory operations.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from ..base import MemoryEntry, MemoryServiceBase
+from ..prompts import FACT_RETRIEVAL_PROMPT, TEMPORAL_ENTITY_EXTRACTION_PROMPT, TemporalEntity
+from ..config import MemoryConfig
+from .llm_providers import _get_openai_client
 
 memory_logger = logging.getLogger("memory_service")
+
+
+def strip_markdown_json(content: str) -> str:
+    """Strip markdown code block wrapper from JSON content.
+
+    Handles formats like:
+    - ```json\n{...}\n```
+    - ```\n{...}\n```
+    - {... } (plain JSON, returned as-is)
+    """
+    content = content.strip()
+    if content.startswith("```"):
+        # Remove opening ```json or ```
+        first_newline = content.find("\n")
+        if first_newline != -1:
+            content = content[first_newline + 1:]
+        # Remove closing ```
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+    return content
 
 
 class MyceliaMemoryService(MemoryServiceBase):
@@ -26,27 +51,23 @@ class MyceliaMemoryService(MemoryServiceBase):
         **kwargs: Additional configuration parameters
     """
 
-    def __init__(
-        self,
-        api_url: str = "http://localhost:8080",
-        timeout: int = 30,
-        **kwargs
-    ):
+    def __init__(self, config: MemoryConfig):
         """Initialize Mycelia memory service.
 
         Args:
-            api_url: Mycelia API endpoint
-            timeout: Request timeout in seconds
-            **kwargs: Additional configuration parameters
+            config: MemoryConfig object containing mycelia_config and llm_config
         """
-        self.api_url = api_url.rstrip("/")
-        self.timeout = timeout
-        self.config = kwargs
-        self._initialized = False
+        super().__init__()
+        self.config = config
+        self.mycelia_config = config.mycelia_config or {}
+        self.api_url = self.mycelia_config.get("api_url", "http://localhost:8080").rstrip("/")
+        self.timeout = self.mycelia_config.get("timeout", 30)
         self._client: Optional[httpx.AsyncClient] = None
 
-        memory_logger.info(f"🍄 Initializing Mycelia memory service at {api_url}")
+        # Store LLM config for temporal extraction
+        self.llm_config = config.llm_config or {}
 
+        memory_logger.info(f"🍄 Initializing Mycelia memory service at {self.api_url}")
     async def initialize(self) -> None:
         """Initialize Mycelia client and verify connection."""
         try:
@@ -119,21 +140,47 @@ class MyceliaMemoryService(MemoryServiceBase):
             user_id: User ID for metadata
 
         Returns:
-            MemoryEntry object
+            MemoryEntry object with full Mycelia metadata including temporal and semantic fields
         """
         memory_id = self._extract_bson_id(obj.get("_id", ""))
         memory_content = obj.get("details", "")
 
+        # Build metadata with all Mycelia fields
+        metadata = {
+            "user_id": user_id,
+            "name": obj.get("name", ""),
+            "aliases": obj.get("aliases", []),
+            "created_at": self._extract_bson_date(obj.get("createdAt")),
+            "updated_at": self._extract_bson_date(obj.get("updatedAt")),
+            # Semantic flags
+            "isPerson": obj.get("isPerson", False),
+            "isEvent": obj.get("isEvent", False),
+            "isPromise": obj.get("isPromise", False),
+            "isRelationship": obj.get("isRelationship", False),
+        }
+
+        # Add icon if present
+        if "icon" in obj and obj["icon"]:
+            metadata["icon"] = obj["icon"]
+
+        # Add temporal information if present
+        if "timeRanges" in obj and obj["timeRanges"]:
+            # Convert BSON dates in timeRanges to ISO strings for JSON serialization
+            time_ranges = []
+            for tr in obj["timeRanges"]:
+                time_range = {
+                    "start": self._extract_bson_date(tr.get("start")),
+                    "end": self._extract_bson_date(tr.get("end")),
+                }
+                if "name" in tr:
+                    time_range["name"] = tr["name"]
+                time_ranges.append(time_range)
+            metadata["timeRanges"] = time_ranges
+
         return MemoryEntry(
             id=memory_id,
             content=memory_content,
-            metadata={
-                "user_id": user_id,
-                "name": obj.get("name", ""),
-                "aliases": obj.get("aliases", []),
-                "created_at": self._extract_bson_date(obj.get("createdAt")),
-                "updated_at": self._extract_bson_date(obj.get("updatedAt")),
-            },
+            metadata=metadata,
             created_at=self._extract_bson_date(obj.get("createdAt"))
         )
 
@@ -175,6 +222,140 @@ class MyceliaMemoryService(MemoryServiceBase):
             memory_logger.error(f"Failed to call Mycelia resource: {e}")
             raise RuntimeError(f"Mycelia API call failed: {e}")
 
+    async def _extract_memories_via_llm(
+        self,
+        transcript: str,
+    ) -> List[str]:
+        """Extract memories from transcript using OpenAI directly.
+
+        Args:
+            transcript: Raw transcript text
+
+        Returns:
+            List of extracted memory facts
+
+        Raises:
+            RuntimeError: If LLM call fails
+        """
+        if not self.llm_config:
+            memory_logger.warning("No LLM config available for fact extraction")
+            return []
+
+        try:
+            # Get OpenAI client using Friend-Lite's utility
+            client = _get_openai_client(
+                api_key=self.llm_config.get("api_key"),
+                base_url=self.llm_config.get("base_url", "https://api.openai.com/v1"),
+                is_async=True
+            )
+
+            # Call OpenAI for memory extraction
+            response = await client.chat.completions.create(
+                model=self.llm_config.get("model", "gpt-4o-mini"),
+                messages=[
+                    {"role": "system", "content": FACT_RETRIEVAL_PROMPT},
+                    {"role": "user", "content": transcript}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1
+            )
+
+            content = response.choices[0].message.content
+
+            if not content:
+                memory_logger.warning("LLM returned empty content")
+                return []
+
+            # Parse JSON response to extract facts
+            try:
+                # Strip markdown wrapper if present (just in case)
+                json_content = strip_markdown_json(content)
+                facts_data = json.loads(json_content)
+                facts = facts_data.get("facts", [])
+                memory_logger.info(f"🧠 Extracted {len(facts)} facts from transcript via OpenAI")
+                return facts
+            except json.JSONDecodeError as e:
+                memory_logger.error(f"Failed to parse LLM response as JSON: {e}")
+                memory_logger.error(f"LLM response was: {content[:300]}")
+                return []
+
+        except Exception as e:
+            memory_logger.error(f"Failed to extract memories via OpenAI: {e}")
+            raise RuntimeError(f"OpenAI memory extraction failed: {e}")
+
+    async def _extract_temporal_entity_via_llm(
+        self,
+        fact: str,
+    ) -> Optional[TemporalEntity]:
+        """Extract temporal and entity information from a fact using OpenAI directly.
+
+        Args:
+            fact: Memory fact text
+
+        Returns:
+            TemporalEntity with extracted information, or None if extraction fails
+        """
+        if not self.llm_config:
+            memory_logger.warning("No LLM config available for temporal extraction")
+            return None
+
+        try:
+            # Get OpenAI client using Friend-Lite's utility
+            client = _get_openai_client(
+                api_key=self.llm_config.get("api_key"),
+                base_url=self.llm_config.get("base_url", "https://api.openai.com/v1"),
+                is_async=True
+            )
+
+            # Call OpenAI with structured output request
+            response = await client.chat.completions.create(
+                model=self.llm_config.get("model", "gpt-4o-mini"),
+                messages=[
+                    {"role": "system", "content": TEMPORAL_ENTITY_EXTRACTION_PROMPT},
+                    {"role": "user", "content": f"Extract temporal and entity information from this memory fact:\n\n{fact}"}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1
+            )
+
+            content = response.choices[0].message.content
+
+            if not content:
+                memory_logger.warning("LLM returned empty content for temporal extraction")
+                return None
+
+            # Parse JSON response and validate with Pydantic
+            try:
+                # Strip markdown wrapper if present (just in case)
+                json_content = strip_markdown_json(content)
+                temporal_data = json.loads(json_content)
+
+                # Convert timeRanges to proper format if present
+                if "timeRanges" in temporal_data:
+                    for time_range in temporal_data["timeRanges"]:
+                        if isinstance(time_range["start"], str):
+                            time_range["start"] = datetime.fromisoformat(time_range["start"].replace("Z", "+00:00"))
+                        if isinstance(time_range["end"], str):
+                            time_range["end"] = datetime.fromisoformat(time_range["end"].replace("Z", "+00:00"))
+
+                temporal_entity = TemporalEntity(**temporal_data)
+                memory_logger.info(f"✅ Temporal extraction: isEvent={temporal_entity.isEvent}, timeRanges={len(temporal_entity.timeRanges)}, entities={temporal_entity.entities}")
+                return temporal_entity
+
+            except json.JSONDecodeError as e:
+                memory_logger.error(f"❌ Failed to parse temporal extraction JSON: {e}")
+                memory_logger.error(f"Content (first 300 chars): {content[:300]}")
+                return None
+            except Exception as e:
+                memory_logger.error(f"Failed to validate temporal entity: {e}")
+                memory_logger.error(f"Data: {content[:300] if content else 'None'}")
+                return None
+
+        except Exception as e:
+            memory_logger.error(f"Failed to extract temporal data via OpenAI: {e}")
+            # Don't fail the entire memory creation if temporal extraction fails
+            return None
+
     async def add_memory(
         self,
         transcript: str,
@@ -199,37 +380,96 @@ class MyceliaMemoryService(MemoryServiceBase):
         Returns:
             Tuple of (success: bool, created_memory_ids: List[str])
         """
+        # Ensure service is initialized (lazy initialization for RQ workers)
+        await self._ensure_initialized()
+        
         try:
             # Generate JWT token for this user
             jwt_token = await self._get_user_jwt(user_id, user_email)
 
-            # Create a Mycelia object for this memory
-            # Memory content is stored in the 'details' field
-            memory_preview = transcript[:50] + ("..." if len(transcript) > 50 else "")
+            # Extract memories from transcript using OpenAI
+            memory_logger.info(f"Extracting memories from transcript via OpenAI...")
+            extracted_facts = await self._extract_memories_via_llm(transcript)
 
-            object_data = {
-                "name": f"Memory: {memory_preview}",
-                "details": transcript,
-                "aliases": [source_id, client_id],  # Searchable by source or client
-                "isPerson": False,
-                "isPromise": False,
-                "isEvent": False,
-                "isRelationship": False,
-                # Note: userId is auto-injected by Mycelia from JWT
-            }
+            if not extracted_facts:
+                memory_logger.warning("No memories extracted from transcript")
+                return (False, [])
 
-            result = await self._call_resource(
-                action="create",
-                jwt_token=jwt_token,
-                object=object_data
-            )
+            # Create Mycelia objects for each extracted fact
+            memory_ids = []
+            for fact in extracted_facts:
+                fact_preview = fact[:50] + ("..." if len(fact) > 50 else "")
 
-            memory_id = result.get("insertedId")
-            if memory_id:
-                memory_logger.info(f"✅ Created Mycelia memory object: {memory_id}")
-                return (True, [memory_id])
+                # Extract temporal and entity information
+                temporal_entity = await self._extract_temporal_entity_via_llm(fact)
+
+                # Build object data with temporal/entity information if available
+                if temporal_entity:
+                    # Convert timeRanges from Pydantic models to dict format for Mycelia API
+                    time_ranges = []
+                    for tr in temporal_entity.timeRanges:
+                        time_range_dict = {
+                            "start": tr.start.isoformat() if isinstance(tr.start, datetime) else tr.start,
+                            "end": tr.end.isoformat() if isinstance(tr.end, datetime) else tr.end,
+                        }
+                        if tr.name:
+                            time_range_dict["name"] = tr.name
+                        time_ranges.append(time_range_dict)
+
+                    # Use emoji in name if available, otherwise use default
+                    name_prefix = temporal_entity.emoji if temporal_entity.emoji else "Memory:"
+
+                    object_data = {
+                        "name": f"{name_prefix} {fact_preview}",
+                        "details": fact,
+                        "aliases": [source_id, client_id] + temporal_entity.entities,  # Include extracted entities
+                        "isPerson": temporal_entity.isPerson,
+                        "isPromise": temporal_entity.isPromise,
+                        "isEvent": temporal_entity.isEvent,
+                        "isRelationship": temporal_entity.isRelationship,
+                        # Note: userId is auto-injected by Mycelia from JWT
+                    }
+
+                    # Add timeRanges if temporal information was extracted
+                    if time_ranges:
+                        object_data["timeRanges"] = time_ranges
+
+                    # Add emoji icon if available
+                    if temporal_entity.emoji:
+                        object_data["icon"] = {"text": temporal_entity.emoji}
+
+                    memory_logger.info(f"📅 Temporal extraction: isEvent={temporal_entity.isEvent}, timeRanges={len(time_ranges)}, entities={len(temporal_entity.entities)}")
+                else:
+                    # Fallback to basic object without temporal data
+                    object_data = {
+                        "name": f"Memory: {fact_preview}",
+                        "details": fact,
+                        "aliases": [source_id, client_id],
+                        "isPerson": False,
+                        "isPromise": False,
+                        "isEvent": False,
+                        "isRelationship": False,
+                    }
+                    memory_logger.warning(f"⚠️  No temporal data extracted for fact: {fact_preview}")
+
+                result = await self._call_resource(
+                    action="create",
+                    jwt_token=jwt_token,
+                    object=object_data
+                )
+
+                memory_id = result.get("insertedId")
+                if memory_id:
+                    memory_logger.info(f"✅ Created Mycelia memory object: {memory_id} - {fact_preview}")
+                    memory_ids.append(memory_id)
+                else:
+                    memory_logger.error(f"Failed to create memory fact: {fact}")
+
+            if memory_ids:
+                memory_logger.info(f"✅ Created {len(memory_ids)} Mycelia memory objects from {len(extracted_facts)} facts")
+                return (True, memory_ids)
             else:
-                memory_logger.error("Failed to create Mycelia memory: no insertedId returned")
+                memory_logger.error("No Mycelia memory objects were created")
                 return (False, [])
 
         except Exception as e:
@@ -361,6 +601,126 @@ class MyceliaMemoryService(MemoryServiceBase):
         except Exception as e:
             memory_logger.error(f"Failed to count memories via Mycelia: {e}")
             return None
+
+    async def get_memory(self, memory_id: str, user_id: Optional[str] = None) -> Optional[MemoryEntry]:
+        """Get a specific memory by ID from Mycelia.
+
+        Args:
+            memory_id: Unique identifier of the memory to retrieve
+            user_id: Optional user identifier for authentication
+
+        Returns:
+            MemoryEntry object if found, None otherwise
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            # Need user ID for JWT authentication
+            if not user_id:
+                memory_logger.error("User ID required for Mycelia get_memory operation")
+                return None
+
+            # Generate JWT token for this user
+            jwt_token = await self._get_user_jwt(user_id)
+
+            # Get the object by ID (auto-scoped by userId in Mycelia)
+            result = await self._call_resource(
+                action="get",
+                jwt_token=jwt_token,
+                id=memory_id
+            )
+
+            if result:
+                return self._mycelia_object_to_memory_entry(result, user_id)
+            else:
+                memory_logger.warning(f"Memory not found with ID: {memory_id}")
+                return None
+
+        except Exception as e:
+            memory_logger.error(f"Failed to get memory via Mycelia: {e}")
+            return None
+
+    async def update_memory(
+        self,
+        memory_id: str,
+        content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        user_email: Optional[str] = None
+    ) -> bool:
+        """Update a specific memory's content and/or metadata in Mycelia.
+
+        Args:
+            memory_id: Unique identifier of the memory to update
+            content: New content for the memory (updates 'details' field)
+            metadata: New metadata to merge with existing
+            user_id: Optional user ID for authentication
+            user_email: Optional user email for authentication
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            # Need user ID for JWT authentication
+            if not user_id:
+                memory_logger.error("User ID required for Mycelia update_memory operation")
+                return False
+
+            # Generate JWT token for this user
+            jwt_token = await self._get_user_jwt(user_id, user_email)
+
+            # Build update object
+            update_data: Dict[str, Any] = {}
+
+            if content is not None:
+                update_data["details"] = content
+
+            if metadata:
+                # Extract specific metadata fields that Mycelia supports
+                if "name" in metadata:
+                    update_data["name"] = metadata["name"]
+                if "aliases" in metadata:
+                    update_data["aliases"] = metadata["aliases"]
+                if "isPerson" in metadata:
+                    update_data["isPerson"] = metadata["isPerson"]
+                if "isPromise" in metadata:
+                    update_data["isPromise"] = metadata["isPromise"]
+                if "isEvent" in metadata:
+                    update_data["isEvent"] = metadata["isEvent"]
+                if "isRelationship" in metadata:
+                    update_data["isRelationship"] = metadata["isRelationship"]
+                if "timeRanges" in metadata:
+                    update_data["timeRanges"] = metadata["timeRanges"]
+                if "icon" in metadata:
+                    update_data["icon"] = metadata["icon"]
+
+            if not update_data:
+                memory_logger.warning("No update data provided")
+                return False
+
+            # Update the object (auto-scoped by userId in Mycelia)
+            result = await self._call_resource(
+                action="update",
+                jwt_token=jwt_token,
+                id=memory_id,
+                object=update_data
+            )
+
+            updated_count = result.get("modifiedCount", 0)
+            if updated_count > 0:
+                memory_logger.info(f"✅ Updated Mycelia memory object: {memory_id}")
+                return True
+            else:
+                memory_logger.warning(f"No memory updated with ID: {memory_id}")
+                return False
+
+        except Exception as e:
+            memory_logger.error(f"Failed to update memory via Mycelia: {e}")
+            return False
 
     async def delete_memory(self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None) -> bool:
         """Delete a specific memory from Mycelia.

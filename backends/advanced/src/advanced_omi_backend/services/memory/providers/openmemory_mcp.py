@@ -47,30 +47,26 @@ class OpenMemoryMCPService(MemoryServiceBase):
         user_id: Optional[str] = None,
         timeout: Optional[int] = None,
     ):
-        self.server_url = server_url or os.getenv("OPENMEMORY_MCP_URL", "http://localhost:8765")
-        self.client_name = client_name or os.getenv("OPENMEMORY_CLIENT_NAME", "friend_lite")
-        self.user_id = user_id or os.getenv("OPENMEMORY_USER_ID", "default")
-        self.timeout = int(timeout or os.getenv("OPENMEMORY_TIMEOUT", "30"))
         """Initialize OpenMemory MCP service as a thin client.
-        
+
         This service delegates all memory processing to the OpenMemory MCP server:
         - Memory extraction (OpenMemory handles internally)
-        - Deduplication (OpenMemory handles internally) 
+        - Deduplication (OpenMemory handles internally)
         - Vector storage (OpenMemory handles internally)
         - User isolation via ACL (OpenMemory handles internally)
-        
+
         Args:
             server_url: URL of the OpenMemory MCP server (default: http://localhost:8765)
             client_name: Client identifier for OpenMemory MCP
             user_id: User identifier for memory isolation via OpenMemory ACL
             timeout: HTTP request timeout in seconds
         """
-        self.server_url = server_url
-        self.client_name = client_name
-        self.user_id = user_id
-        self.timeout = timeout
+        super().__init__()
+        self.server_url = server_url or os.getenv("OPENMEMORY_MCP_URL", "http://localhost:8765")
+        self.client_name = client_name or os.getenv("OPENMEMORY_CLIENT_NAME", "friend_lite")
+        self.user_id = user_id or os.getenv("OPENMEMORY_USER_ID", "default")
+        self.timeout = int(timeout or os.getenv("OPENMEMORY_TIMEOUT", "30"))
         self.mcp_client: Optional[MCPClient] = None
-        self._initialized = False
     
     async def initialize(self) -> None:
         """Initialize the OpenMemory MCP service.
@@ -138,8 +134,7 @@ class OpenMemoryMCPService(MemoryServiceBase):
         Raises:
             MCPError: If MCP server communication fails
         """
-        if not self._initialized:
-            await self.initialize()
+        await self._ensure_initialized()
         
         try:
             # Skip empty transcripts
@@ -149,19 +144,22 @@ class OpenMemoryMCPService(MemoryServiceBase):
             
             # Update MCP client user context for this operation
             original_user_id = self.mcp_client.user_id
-            self.mcp_client.user_id = self.user_id  # Use configured user ID
-            
+            original_user_email = self.mcp_client.user_email
+            self.mcp_client.user_id = user_id  # Use the actual Friend-Lite user's ID
+            self.mcp_client.user_email = user_email  # Use the actual user's email
+
             try:
                 # Thin client approach: Send raw transcript to OpenMemory MCP server
                 # OpenMemory handles: extraction, deduplication, vector storage, ACL
                 enriched_transcript = f"[Source: {source_id}, Client: {client_id}] {transcript}"
-                
-                memory_logger.info(f"Delegating memory processing to OpenMemory MCP for {source_id}")
+
+                memory_logger.info(f"Delegating memory processing to OpenMemory MCP for user {user_id}, source {source_id}")
                 memory_ids = await self.mcp_client.add_memories(text=enriched_transcript)
-                    
+
             finally:
-                # Restore original user_id
+                # Restore original user context
                 self.mcp_client.user_id = original_user_id
+                self.mcp_client.user_email = original_user_email
             
             # Update database relationships if helper provided
             if memory_ids and db_helper:
@@ -208,24 +206,24 @@ class OpenMemoryMCPService(MemoryServiceBase):
         
         # Update MCP client user context for this operation
         original_user_id = self.mcp_client.user_id
-        self.mcp_client.user_id = self.user_id  # Use configured user ID
-        
+        self.mcp_client.user_id = user_id  # Use the actual Friend-Lite user's ID
+
         try:
             results = await self.mcp_client.search_memory(
                 query=query,
                 limit=limit
             )
-            
+
             # Convert MCP results to MemoryEntry objects
             memory_entries = []
             for result in results:
                 memory_entry = self._mcp_result_to_memory_entry(result, user_id)
                 if memory_entry:
                     memory_entries.append(memory_entry)
-            
+
             memory_logger.info(f"🔍 Found {len(memory_entries)} memories for query '{query}' (user: {user_id})")
             return memory_entries
-            
+
         except MCPError as e:
             memory_logger.error(f"Search memories failed: {e}")
             return []
@@ -258,21 +256,21 @@ class OpenMemoryMCPService(MemoryServiceBase):
         
         # Update MCP client user context for this operation
         original_user_id = self.mcp_client.user_id
-        self.mcp_client.user_id = self.user_id  # Use configured user ID
-        
+        self.mcp_client.user_id = user_id  # Use the actual Friend-Lite user's ID
+
         try:
             results = await self.mcp_client.list_memories(limit=limit)
-            
+
             # Convert MCP results to MemoryEntry objects
             memory_entries = []
             for result in results:
                 memory_entry = self._mcp_result_to_memory_entry(result, user_id)
                 if memory_entry:
                     memory_entries.append(memory_entry)
-            
+
             memory_logger.info(f"📚 Retrieved {len(memory_entries)} memories for user {user_id}")
             return memory_entries
-            
+
         except MCPError as e:
             memory_logger.error(f"Get all memories failed: {e}")
             return []
@@ -282,7 +280,89 @@ class OpenMemoryMCPService(MemoryServiceBase):
         finally:
             # Restore original user_id
             self.mcp_client.user_id = original_user_id
-    
+
+    async def get_memory(self, memory_id: str, user_id: Optional[str] = None) -> Optional[MemoryEntry]:
+        """Get a specific memory by ID.
+
+        Args:
+            memory_id: Unique identifier of the memory to retrieve
+            user_id: Optional user identifier for filtering
+
+        Returns:
+            MemoryEntry object if found, None otherwise
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        # Update MCP client user context for this operation
+        original_user_id = self.mcp_client.user_id
+        self.mcp_client.user_id = user_id or self.user_id  # Use the actual Friend-Lite user's ID
+
+        try:
+            result = await self.mcp_client.get_memory(memory_id)
+
+            if not result:
+                memory_logger.warning(f"Memory not found: {memory_id}")
+                return None
+
+            # Convert MCP result to MemoryEntry
+            memory_entry = self._mcp_result_to_memory_entry(result, user_id or self.user_id)
+            if memory_entry:
+                memory_logger.info(f"📖 Retrieved memory {memory_id}")
+            return memory_entry
+
+        except Exception as e:
+            memory_logger.error(f"Failed to get memory: {e}")
+            return None
+        finally:
+            # Restore original user_id
+            self.mcp_client.user_id = original_user_id
+
+    async def update_memory(
+        self,
+        memory_id: str,
+        content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        user_email: Optional[str] = None
+    ) -> bool:
+        """Update a specific memory's content and/or metadata.
+
+        Args:
+            memory_id: Unique identifier of the memory to update
+            content: New content for the memory (if None, content is not updated)
+            metadata: New metadata to merge with existing (if None, metadata is not updated)
+            user_id: Optional user ID (not used by OpenMemory MCP)
+            user_email: Optional user email (not used by OpenMemory MCP)
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        # Update MCP client user context for this operation
+        original_user_id = self.mcp_client.user_id
+        self.mcp_client.user_id = user_id or self.user_id  # Use the actual Friend-Lite user's ID
+
+        try:
+            success = await self.mcp_client.update_memory(
+                memory_id=memory_id,
+                content=content,
+                metadata=metadata
+            )
+
+            if success:
+                memory_logger.info(f"✏️ Updated memory {memory_id} via MCP")
+            return success
+
+        except Exception as e:
+            memory_logger.error(f"Failed to update memory: {e}")
+            return False
+        finally:
+            # Restore original user_id
+            self.mcp_client.user_id = original_user_id
+
     async def delete_memory(self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None) -> bool:
         """Delete a specific memory by ID.
         
