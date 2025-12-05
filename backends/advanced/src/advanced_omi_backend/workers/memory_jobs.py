@@ -31,7 +31,7 @@ async def process_memory_job(
     V2 Architecture:
         1. Extracts memories from conversation transcript
         2. Checks primary speakers filter if configured
-        3. Uses configured memory provider (friend_lite or openmemory_mcp)
+        3. Uses configured memory provider (chronicle or openmemory_mcp)
         4. Stores memory references in conversation document
 
     Note: Listening jobs are restarted by open_conversation_job (not here).
@@ -140,7 +140,7 @@ async def process_memory_job(
                 transcript_version_id = conversation_model.active_transcript_version or "unknown"
 
                 # Determine memory provider from memory service
-                memory_provider = conversation_model.MemoryProvider.FRIEND_LITE  # Default
+                memory_provider = conversation_model.MemoryProvider.CHRONICLE  # Default
                 try:
                     from advanced_omi_backend.services.memory import get_memory_service
                     memory_service_obj = get_memory_service()

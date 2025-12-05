@@ -118,12 +118,12 @@ def generate_jwt_for_user(user_id: str, user_email: str) -> str:
     from datetime import datetime, timedelta
     import jwt
 
-    # Create JWT payload matching Friend-Lite's standard format
+    # Create JWT payload matching Chronicle's standard format
     payload = {
         "sub": user_id,  # Subject = user ID
         "email": user_email,
-        "iss": "friend-lite",  # Issuer
-        "aud": "friend-lite",  # Audience
+        "iss": "chronicle",  # Issuer
+        "aud": "chronicle",  # Audience
         "exp": datetime.utcnow() + timedelta(hours=24),  # 24 hour expiration
         "iat": datetime.utcnow(),  # Issued at
     }
