@@ -146,10 +146,8 @@ class OpenMemoryMCPService(MemoryServiceBase):
             # OpenMemory will auto-create users if they don't exist
             original_user_id = self.mcp_client.user_id
             original_user_email = self.mcp_client.user_email
-
-            # Update MCP client with Friend-Lite user details
-            self.mcp_client.user_id = user_id
-            self.mcp_client.user_email = user_email
+            self.mcp_client.user_id = user_id  # Use the actual Chronicle user's ID
+            self.mcp_client.user_email = user_email  # Use the actual user's email
 
             try:
                 # Thin client approach: Send raw transcript to OpenMemory MCP server
@@ -209,7 +207,7 @@ class OpenMemoryMCPService(MemoryServiceBase):
         
         # Update MCP client user context for this search operation
         original_user_id = self.mcp_client.user_id
-        self.mcp_client.user_id = user_id
+        self.mcp_client.user_id = user_id  # Use the actual Chronicle user's ID
 
         try:
             results = await self.mcp_client.search_memory(

@@ -127,7 +127,17 @@ class MCPClient:
 
             response = await self.client.post(
                 f"{self.server_url}/api/v1/memories/",
-                json=payload
+                json={
+                    "user_id": self.user_id,
+                    "text": text,
+                    "app": self.client_name,  # Use app name (OpenMemory accepts name or UUID)
+                    "metadata": {
+                        "source": "chronicle",
+                        "client": self.client_name,
+                        "user_email": self.user_email
+                    },
+                    "infer": True
+                }
             )
 
             response_body = response.text[:500] if response.status_code != 200 else "..."

@@ -107,7 +107,7 @@ The setup wizard will automatically download and configure:
 
 **Download the code:**
 ```bash
-git clone https://github.com/AnkushMalaker/chronicle.git
+git clone https://github.com/chronicle-ai/chronicle.git
 cd chronicle
 ```
 
