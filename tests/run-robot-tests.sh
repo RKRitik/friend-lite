@@ -216,7 +216,8 @@ cd ../../tests
 # Install Robot Framework dependencies if not in CI
 if [ -z "$CI" ]; then
     print_info "Installing Robot Framework dependencies..."
-    pip install --quiet robotframework robotframework-requests python-dotenv websockets
+    uv venv --quiet --python 3.12 || true  # May already exist
+    uv pip install --quiet robotframework robotframework-requests python-dotenv websockets
 fi
 
 # Run Robot Framework tests via Makefile
@@ -245,10 +246,15 @@ fi
 # Display test results summary
 if [ -f "$OUTPUTDIR/output.xml" ]; then
     print_info "Test Results Summary:"
-    python3 << 'PYTHON_SCRIPT'
+    uv run python3 << 'PYTHON_SCRIPT'
 import xml.etree.ElementTree as ET
-tree = ET.parse('results/output.xml')
+import os
+
+output_file = os.getenv('OUTPUTDIR', 'results') + '/output.xml'
+tree = ET.parse(output_file)
 root = tree.getroot()
+
+# Get overall stats
 stats = root.find('.//total/stat')
 if stats is not None:
     passed = stats.get("pass", "0")
@@ -256,6 +262,23 @@ if stats is not None:
     print(f'✅ Passed: {passed}')
     print(f'❌ Failed: {failed}')
     print(f'📊 Total: {int(passed) + int(failed)}')
+
+    # Show failed tests if any
+    if int(failed) > 0:
+        print('\n❌ Failed Tests:')
+        failed_tests = root.findall('.//test')
+        for test in failed_tests:
+            status_elem = test.find('./status')
+            if status_elem is not None and status_elem.get('status') == 'FAIL':
+                test_name = test.get('name')
+                msg = status_elem.text or status_elem.get('message', 'No message')
+                print(f'\n  - {test_name}')
+                # Print first 150 chars of error message
+                if msg:
+                    print(f'    {msg[:150]}...' if len(msg) > 150 else f'    {msg}')
+
+    # Print where to find full results
+    print(f'\n📄 Full results: {output_file.replace("/output.xml", "/log.html")}')
 PYTHON_SCRIPT
 fi
 

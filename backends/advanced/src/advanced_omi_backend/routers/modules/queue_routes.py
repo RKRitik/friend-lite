@@ -83,6 +83,9 @@ async def get_job_status(
             "status": status
         }
 
+    except HTTPException:
+        # Re-raise HTTPException unchanged (e.g., 403 Forbidden)
+        raise
     except Exception as e:
         logger.error(f"Failed to get job status {job_id}: {e}")
         raise HTTPException(status_code=404, detail="Job not found")
@@ -131,6 +134,9 @@ async def get_job(
             "error_message": str(job.exc_info) if job.exc_info else None,
         }
 
+    except HTTPException:
+        # Re-raise HTTPException unchanged (e.g., 403 Forbidden)
+        raise
     except Exception as e:
         logger.error(f"Failed to get job {job_id}: {e}")
         raise HTTPException(status_code=404, detail="Job not found")
@@ -171,7 +177,10 @@ async def cancel_job(
                 "message": f"Job {job_id} has been deleted"
             }
 
-    except HTTPException as e:
+    except HTTPException:
+        # Re-raise HTTPException unchanged (e.g., 403 Forbidden)
+        raise
+    except Exception as e:
         logger.error(f"Failed to cancel/delete job {job_id}: {e}")
         raise HTTPException(status_code=404, detail=f"Job not found or could not be cancelled: {str(e)}")
 
