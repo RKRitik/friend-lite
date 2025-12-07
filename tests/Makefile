@@ -31,29 +31,33 @@ help:
 # Creates a persistent fixture conversation that won't be deleted between suites
 all:
 	@echo "Running all tests..."
-	CREATE_FIXTURE=true robot --outputdir $(OUTPUTDIR) \
+	CREATE_FIXTURE=true uv run robot --outputdir $(OUTPUTDIR) \
 		--name "All Tests" \
+		--console verbose \
 		$(TEST_DIR)
 
 # Run only endpoint tests
 endpoints:
 	@echo "Running endpoint tests..."
-	robot --outputdir $(OUTPUTDIR) \
+	uv run robot --outputdir $(OUTPUTDIR) \
 		--name "Endpoint Tests" \
+		--console verbose \
 		endpoints
 
 # Run only integration tests
 integration:
 	@echo "Running integration tests..."
-	CREATE_FIXTURE=true robot --outputdir $(OUTPUTDIR) \
+	CREATE_FIXTURE=true uv run robot --outputdir $(OUTPUTDIR) \
 		--name "Integration Tests" \
+		--console verbose \
 		integration
 
 # Run only infrastructure tests
 infra:
 	@echo "Running infrastructure tests..."
-	robot --outputdir $(OUTPUTDIR) \
+	uv run robot --outputdir $(OUTPUTDIR) \
 		--name "Infrastructure Tests" \
+		--console verbose \
 		infrastructure
 
 # Clean up test output files
