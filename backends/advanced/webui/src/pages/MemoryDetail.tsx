@@ -50,22 +50,22 @@ export default function MemoryDetail() {
       console.log('🔍 MemoryDetail: Loading memory', id)
       setLoading(true)
       setError(null)
-      const response = await memoriesApi.getAll(user.id)
-      const memoriesData = response.data.memories || response.data || []
-      console.log('📦 MemoryDetail: Loaded memories', memoriesData.length)
+      const response = await memoriesApi.getById(id, user.id)
+      const memoryData = response.data.memory
+      console.log('📦 MemoryDetail: Loaded memory', memoryData?.id)
 
-      // Find the specific memory by ID
-      const foundMemory = memoriesData.find((m: Memory) => m.id === id)
-      console.log('🎯 MemoryDetail: Found memory?', !!foundMemory, foundMemory?.id)
-
-      if (foundMemory) {
-        setMemory(foundMemory)
+      if (memoryData) {
+        setMemory(memoryData)
       } else {
         setError('Memory not found')
       }
     } catch (err: any) {
       console.error('❌ Failed to load memory:', err)
-      setError(err.message || 'Failed to load memory')
+      if (err.response?.status === 404) {
+        setError('Memory not found')
+      } else {
+        setError(err.message || 'Failed to load memory')
+      }
     } finally {
       setLoading(false)
     }

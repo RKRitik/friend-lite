@@ -200,14 +200,18 @@ class MyceliaSyncService:
             if result:
                 client_id, api_key = result
                 if api_key:
+                    # Credentials created successfully - don't log them
                     logger.info("="*70)
-                    logger.info("🔑 MYCELIA OAUTH CREDENTIALS (Save these!)")
+                    logger.info("🔑 MYCELIA OAUTH CREDENTIALS CREATED")
                     logger.info("="*70)
                     logger.info(f"User:          {admin_email}")
                     logger.info(f"Client ID:     {client_id}")
-                    logger.info(f"Client Secret: {api_key}")
-                    logger.info("="*70)
-                    logger.info("Configure Mycelia frontend at http://localhost:3002/settings")
+                    logger.info("")
+                    logger.info("🔐 To retrieve credentials for Mycelia configuration:")
+                    logger.info("   cd backends/advanced/scripts")
+                    logger.info("   python create_mycelia_api_key.py")
+                    logger.info("")
+                    logger.info("📝 This will display the API key needed for Mycelia frontend setup")
                     logger.info("="*70)
 
             return result
