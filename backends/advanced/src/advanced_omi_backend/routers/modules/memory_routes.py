@@ -57,6 +57,16 @@ async def search_memories(
     return await memory_controller.search_memories(query, current_user, limit, score_threshold, user_id)
 
 
+@router.get("/{memory_id}")
+async def get_memory_by_id(
+    memory_id: str,
+    current_user: User = Depends(current_active_user),
+    user_id: Optional[str] = Query(default=None, description="User ID filter (admin only)"),
+):
+    """Get a single memory by ID. Users can only access their own memories, admins can access any."""
+    return await memory_controller.get_memory_by_id(memory_id, current_user, user_id)
+
+
 @router.post("")
 async def add_memory(
     request: AddMemoryRequest,

@@ -275,6 +275,8 @@ chronicle/
    ls -la backends/advanced/.env.template
    ```
 
+   > **Note:** The `--recursive` flag downloads the optional Mycelia submodule (an alternative memory backend with timeline visualization). Most deployments use the default Friend-Lite memory system and don't need Mycelia.
+
 2. **Install Required Tools**
    
    **kubectl** (required for Skaffold and Helm):

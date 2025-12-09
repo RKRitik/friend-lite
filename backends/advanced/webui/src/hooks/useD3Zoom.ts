@@ -16,6 +16,7 @@ export function useD3Zoom(options: UseD3ZoomOptions = {}) {
 
   const svgRef = useRef<SVGSVGElement>(null)
   const [transform, setTransform] = useState<d3.ZoomTransform>(d3.zoomIdentity)
+  const initializedRef = useRef(false)
 
   const handleZoom = useCallback(
     (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
@@ -54,6 +55,16 @@ export function useD3Zoom(options: UseD3ZoomOptions = {}) {
     [handleZoom, scaleExtent, wheelDelta]
   )
 
+  // Set initial transform once on mount
+  useEffect(() => {
+    if (!svgRef.current || initializedRef.current) return
+
+    const svg = d3.select(svgRef.current)
+    svg.property('__zoom', d3.zoomIdentity)
+    initializedRef.current = true
+  }, [])
+
+  // Setup zoom behavior (only when zoomBehavior changes)
   useEffect(() => {
     if (!svgRef.current) return
 
@@ -67,12 +78,11 @@ export function useD3Zoom(options: UseD3ZoomOptions = {}) {
     }
 
     svg.call(zoomBehavior as any)
-    svg.property('__zoom', transform)
 
     return () => {
       svg.on('.zoom', null)
     }
-  }, [zoomBehavior, transform])
+  }, [zoomBehavior])
 
   return {
     svgRef,

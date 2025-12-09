@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Create a proper Mycelia API key (not OAuth client) for Chronicle user."""
 
+import base64
 import os
 import sys
 import secrets
@@ -20,7 +21,6 @@ USER_ID = os.getenv("USER_ID", "692c7727c7b16bdf58d23cd1")  # test user
 def hash_api_key_with_salt(api_key: str, salt: bytes) -> str:
     """Hash API key with salt (matches Mycelia's hashApiKey function)."""
     # SHA256(salt + apiKey) in base64
-    import base64
     h = hashlib.sha256()
     h.update(salt)
     h.update(api_key.encode('utf-8'))
@@ -68,7 +68,6 @@ def main():
         )
 
     # Create API key document (matches Mycelia's format)
-    import base64
     api_key_doc = {
         "hashedKey": hashed_key,  # Note: hashedKey, not hash!
         "salt": base64.b64encode(salt).decode('utf-8'),  # Store as base64 like Mycelia

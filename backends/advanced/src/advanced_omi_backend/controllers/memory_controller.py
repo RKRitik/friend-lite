@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi.responses import JSONResponse
 
 from advanced_omi_backend.services.memory import get_memory_service
+from advanced_omi_backend.services.memory.base import MemoryEntry
 from advanced_omi_backend.users import User
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ async def get_memories(user: User, limit: int, user_id: Optional[str] = None):
         total_count = await memory_service.count_memories(target_user_id)
 
         # Convert MemoryEntry objects to dicts for JSON serialization
-        memories_dicts = [mem.to_dict() if hasattr(mem, 'to_dict') else mem for mem in memories]
+        memories_dicts = [mem.to_dict() for mem in memories]
 
         return {
             "memories": memories_dicts,
@@ -91,7 +92,7 @@ async def search_memories(query: str, user: User, limit: int, score_threshold: f
         search_results = await memory_service.search_memories(query, target_user_id, limit, score_threshold)
 
         # Convert MemoryEntry objects to dicts for JSON serialization
-        results_dicts = [result.to_dict() if hasattr(result, 'to_dict') else result for result in search_results]
+        results_dicts = [result.to_dict() for result in search_results]
 
         return {
             "query": query,
@@ -251,4 +252,31 @@ async def get_all_memories_admin(user: User, limit: int):
         audio_logger.error(f"Error fetching admin memories: {e}", exc_info=True)
         return JSONResponse(
             status_code=500, content={"message": f"Error fetching admin memories: {str(e)}"}
+        )
+
+
+async def get_memory_by_id(memory_id: str, user: User, user_id: Optional[str] = None):
+    """Get a single memory by ID. Users can only access their own memories, admins can access any."""
+    try:
+        memory_service = get_memory_service()
+
+        # Determine which user's memory to fetch
+        target_user_id = user.user_id
+        if user.is_superuser and user_id:
+            target_user_id = user_id
+
+        # Get the specific memory
+        memory = await memory_service.get_memory(memory_id, target_user_id)
+
+        if memory:
+            # Convert MemoryEntry to dict for JSON serialization
+            memory_dict = memory.to_dict()
+            return {"memory": memory_dict}
+        else:
+            return JSONResponse(status_code=404, content={"message": "Memory not found"})
+
+    except Exception as e:
+        audio_logger.error(f"Error fetching memory {memory_id}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500, content={"message": f"Error fetching memory: {str(e)}"}
         )

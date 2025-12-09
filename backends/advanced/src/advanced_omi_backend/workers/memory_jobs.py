@@ -142,7 +142,6 @@ async def process_memory_job(
                 # Determine memory provider from memory service
                 memory_provider = conversation_model.MemoryProvider.CHRONICLE  # Default
                 try:
-                    from advanced_omi_backend.services.memory import get_memory_service
                     memory_service_obj = get_memory_service()
                     provider_name = memory_service_obj.__class__.__name__
                     if "OpenMemory" in provider_name:
