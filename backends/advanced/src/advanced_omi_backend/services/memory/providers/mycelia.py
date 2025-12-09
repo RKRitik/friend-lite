@@ -4,15 +4,24 @@ This module provides a concrete implementation of the MemoryServiceBase interfac
 that uses Mycelia as the backend for all memory operations.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
 import httpx
 
+from advanced_omi_backend.auth import generate_jwt_for_user
+from advanced_omi_backend.users import User
+
 from ..base import MemoryEntry, MemoryServiceBase
-from ..prompts import FACT_RETRIEVAL_PROMPT, TEMPORAL_ENTITY_EXTRACTION_PROMPT, TemporalEntity
 from ..config import MemoryConfig
+from ..prompts import (
+    FACT_RETRIEVAL_PROMPT,
+    TemporalEntity,
+    get_temporal_entity_extraction_prompt,
+)
 from .llm_providers import _get_openai_client
 
 memory_logger = logging.getLogger("memory_service")
@@ -31,7 +40,7 @@ def strip_markdown_json(content: str) -> str:
         # Remove opening ```json or ```
         first_newline = content.find("\n")
         if first_newline != -1:
-            content = content[first_newline + 1:]
+            content = content[first_newline + 1 :]
         # Remove closing ```
         if content.endswith("```"):
             content = content[:-3]
@@ -68,6 +77,7 @@ class MyceliaMemoryService(MemoryServiceBase):
         self.llm_config = config.llm_config or {}
 
         memory_logger.info(f"🍄 Initializing Mycelia memory service at {self.api_url}")
+
     async def initialize(self) -> None:
         """Initialize Mycelia client and verify connection."""
         try:
@@ -75,7 +85,7 @@ class MyceliaMemoryService(MemoryServiceBase):
             self._client = httpx.AsyncClient(
                 base_url=self.api_url,
                 timeout=self.timeout,
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
             )
 
             # Test connection directly (without calling test_connection to avoid recursion)
@@ -106,11 +116,8 @@ class MyceliaMemoryService(MemoryServiceBase):
         Raises:
             ValueError: If user not found
         """
-        from advanced_omi_backend.auth import generate_jwt_for_user
-
         # If email not provided, lookup user
         if not user_email:
-            from advanced_omi_backend.users import User
             user = await User.get(user_id)
             if not user:
                 raise ValueError(f"User {user_id} not found")
@@ -181,15 +188,10 @@ class MyceliaMemoryService(MemoryServiceBase):
             id=memory_id,
             content=memory_content,
             metadata=metadata,
-            created_at=self._extract_bson_date(obj.get("createdAt"))
+            created_at=self._extract_bson_date(obj.get("createdAt")),
         )
 
-    async def _call_resource(
-        self,
-        action: str,
-        jwt_token: str,
-        **params
-    ) -> Dict[str, Any]:
+    async def _call_resource(self, action: str, jwt_token: str, **params) -> Dict[str, Any]:
         """Call Mycelia objects resource with JWT authentication.
 
         Args:
@@ -210,17 +212,19 @@ class MyceliaMemoryService(MemoryServiceBase):
             response = await self._client.post(
                 "/api/resource/tech.mycelia.objects",
                 json={"action": action, **params},
-                headers={"Authorization": f"Bearer {jwt_token}"}
+                headers={"Authorization": f"Bearer {jwt_token}"},
             )
             response.raise_for_status()
             return response.json()
 
         except httpx.HTTPStatusError as e:
-            memory_logger.error(f"Mycelia API error: {e.response.status_code} - {e.response.text}")
-            raise RuntimeError(f"Mycelia API error: {e.response.status_code}")
+            memory_logger.exception(
+                f"Mycelia API error: {e.response.status_code} - {e.response.text}"
+            )
+            raise RuntimeError(f"Mycelia API error: {e.response.status_code}") from e
         except Exception as e:
-            memory_logger.error(f"Failed to call Mycelia resource: {e}")
-            raise RuntimeError(f"Mycelia API call failed: {e}")
+            memory_logger.exception(f"Failed to call Mycelia resource: {e}")
+            raise RuntimeError(f"Mycelia API call failed: {e}") from e
 
     async def _extract_memories_via_llm(
         self,
@@ -246,7 +250,7 @@ class MyceliaMemoryService(MemoryServiceBase):
             client = _get_openai_client(
                 api_key=self.llm_config.get("api_key"),
                 base_url=self.llm_config.get("base_url", "https://api.openai.com/v1"),
-                is_async=True
+                is_async=True,
             )
 
             # Call OpenAI for memory extraction
@@ -254,10 +258,10 @@ class MyceliaMemoryService(MemoryServiceBase):
                 model=self.llm_config.get("model", "gpt-4o-mini"),
                 messages=[
                     {"role": "system", "content": FACT_RETRIEVAL_PROMPT},
-                    {"role": "user", "content": transcript}
+                    {"role": "user", "content": transcript},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.1
+                temperature=0.1,
             )
 
             content = response.choices[0].message.content
@@ -281,7 +285,7 @@ class MyceliaMemoryService(MemoryServiceBase):
 
         except Exception as e:
             memory_logger.error(f"Failed to extract memories via OpenAI: {e}")
-            raise RuntimeError(f"OpenAI memory extraction failed: {e}")
+            raise RuntimeError(f"OpenAI memory extraction failed: {e}") from e
 
     async def _extract_temporal_entity_via_llm(
         self,
@@ -304,18 +308,21 @@ class MyceliaMemoryService(MemoryServiceBase):
             client = _get_openai_client(
                 api_key=self.llm_config.get("api_key"),
                 base_url=self.llm_config.get("base_url", "https://api.openai.com/v1"),
-                is_async=True
+                is_async=True,
             )
 
             # Call OpenAI with structured output request
             response = await client.chat.completions.create(
                 model=self.llm_config.get("model", "gpt-4o-mini"),
                 messages=[
-                    {"role": "system", "content": TEMPORAL_ENTITY_EXTRACTION_PROMPT},
-                    {"role": "user", "content": f"Extract temporal and entity information from this memory fact:\n\n{fact}"}
+                    {"role": "system", "content": get_temporal_entity_extraction_prompt()},
+                    {
+                        "role": "user",
+                        "content": f"Extract temporal and entity information from this memory fact:\n\n{fact}",
+                    },
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.1
+                temperature=0.1,
             )
 
             content = response.choices[0].message.content
@@ -334,12 +341,18 @@ class MyceliaMemoryService(MemoryServiceBase):
                 if "timeRanges" in temporal_data:
                     for time_range in temporal_data["timeRanges"]:
                         if isinstance(time_range["start"], str):
-                            time_range["start"] = datetime.fromisoformat(time_range["start"].replace("Z", "+00:00"))
+                            time_range["start"] = datetime.fromisoformat(
+                                time_range["start"].replace("Z", "+00:00")
+                            )
                         if isinstance(time_range["end"], str):
-                            time_range["end"] = datetime.fromisoformat(time_range["end"].replace("Z", "+00:00"))
+                            time_range["end"] = datetime.fromisoformat(
+                                time_range["end"].replace("Z", "+00:00")
+                            )
 
                 temporal_entity = TemporalEntity(**temporal_data)
-                memory_logger.info(f"✅ Temporal extraction: isEvent={temporal_entity.isEvent}, timeRanges={len(temporal_entity.timeRanges)}, entities={temporal_entity.entities}")
+                memory_logger.info(
+                    f"✅ Temporal extraction: isEvent={temporal_entity.isEvent}, timeRanges={len(temporal_entity.timeRanges)}, entities={temporal_entity.entities}"
+                )
                 return temporal_entity
 
             except json.JSONDecodeError as e:
@@ -382,7 +395,7 @@ class MyceliaMemoryService(MemoryServiceBase):
         """
         # Ensure service is initialized (lazy initialization for RQ workers)
         await self._ensure_initialized()
-        
+
         try:
             # Generate JWT token for this user
             jwt_token = await self._get_user_jwt(user_id, user_email)
@@ -409,7 +422,9 @@ class MyceliaMemoryService(MemoryServiceBase):
                     time_ranges = []
                     for tr in temporal_entity.timeRanges:
                         time_range_dict = {
-                            "start": tr.start.isoformat() if isinstance(tr.start, datetime) else tr.start,
+                            "start": (
+                                tr.start.isoformat() if isinstance(tr.start, datetime) else tr.start
+                            ),
                             "end": tr.end.isoformat() if isinstance(tr.end, datetime) else tr.end,
                         }
                         if tr.name:
@@ -422,7 +437,8 @@ class MyceliaMemoryService(MemoryServiceBase):
                     object_data = {
                         "name": f"{name_prefix} {fact_preview}",
                         "details": fact,
-                        "aliases": [source_id, client_id] + temporal_entity.entities,  # Include extracted entities
+                        "aliases": [source_id, client_id]
+                        + temporal_entity.entities,  # Include extracted entities
                         "isPerson": temporal_entity.isPerson,
                         "isPromise": temporal_entity.isPromise,
                         "isEvent": temporal_entity.isEvent,
@@ -438,7 +454,9 @@ class MyceliaMemoryService(MemoryServiceBase):
                     if temporal_entity.emoji:
                         object_data["icon"] = {"text": temporal_entity.emoji}
 
-                    memory_logger.info(f"📅 Temporal extraction: isEvent={temporal_entity.isEvent}, timeRanges={len(time_ranges)}, entities={len(temporal_entity.entities)}")
+                    memory_logger.info(
+                        f"📅 Temporal extraction: isEvent={temporal_entity.isEvent}, timeRanges={len(time_ranges)}, entities={len(temporal_entity.entities)}"
+                    )
                 else:
                     # Fallback to basic object without temporal data
                     object_data = {
@@ -453,20 +471,22 @@ class MyceliaMemoryService(MemoryServiceBase):
                     memory_logger.warning(f"⚠️  No temporal data extracted for fact: {fact_preview}")
 
                 result = await self._call_resource(
-                    action="create",
-                    jwt_token=jwt_token,
-                    object=object_data
+                    action="create", jwt_token=jwt_token, object=object_data
                 )
 
                 memory_id = result.get("insertedId")
                 if memory_id:
-                    memory_logger.info(f"✅ Created Mycelia memory object: {memory_id} - {fact_preview}")
+                    memory_logger.info(
+                        f"✅ Created Mycelia memory object: {memory_id} - {fact_preview}"
+                    )
                     memory_ids.append(memory_id)
                 else:
                     memory_logger.error(f"Failed to create memory fact: {fact}")
 
             if memory_ids:
-                memory_logger.info(f"✅ Created {len(memory_ids)} Mycelia memory objects from {len(extracted_facts)} facts")
+                memory_logger.info(
+                    f"✅ Created {len(memory_ids)} Mycelia memory objects from {len(extracted_facts)} facts"
+                )
                 return (True, memory_ids)
             else:
                 memory_logger.error("No Mycelia memory objects were created")
@@ -505,8 +525,8 @@ class MyceliaMemoryService(MemoryServiceBase):
                 options={
                     "searchTerm": query,
                     "limit": limit,
-                    "sort": {"updatedAt": -1}  # Most recent first
-                }
+                    "sort": {"updatedAt": -1},  # Most recent first
+                },
             )
 
             # Convert Mycelia objects to MemoryEntry objects
@@ -528,9 +548,7 @@ class MyceliaMemoryService(MemoryServiceBase):
             memory_logger.error(f"Failed to search memories via Mycelia: {e}")
             return []
 
-    async def get_all_memories(
-        self, user_id: str, limit: int = 100
-    ) -> List[MemoryEntry]:
+    async def get_all_memories(self, user_id: str, limit: int = 100) -> List[MemoryEntry]:
         """Get all memories for a user from Mycelia.
 
         Args:
@@ -552,10 +570,7 @@ class MyceliaMemoryService(MemoryServiceBase):
                 action="list",
                 jwt_token=jwt_token,
                 filters={},  # Auto-scoped by userId
-                options={
-                    "limit": limit,
-                    "sort": {"updatedAt": -1}  # Most recent first
-                }
+                options={"limit": limit, "sort": {"updatedAt": -1}},  # Most recent first
             )
 
             # Convert Mycelia objects to MemoryEntry objects
@@ -588,12 +603,8 @@ class MyceliaMemoryService(MemoryServiceBase):
 
             response = await self._client.post(
                 "/api/resource/tech.mycelia.mongo",
-                json={
-                    "action": "count",
-                    "collection": "objects",
-                    "query": {"userId": user_id}
-                },
-                headers={"Authorization": f"Bearer {jwt_token}"}
+                json={"action": "count", "collection": "objects", "query": {"userId": user_id}},
+                headers={"Authorization": f"Bearer {jwt_token}"},
             )
             response.raise_for_status()
             return response.json()
@@ -602,7 +613,9 @@ class MyceliaMemoryService(MemoryServiceBase):
             memory_logger.error(f"Failed to count memories via Mycelia: {e}")
             return None
 
-    async def get_memory(self, memory_id: str, user_id: Optional[str] = None) -> Optional[MemoryEntry]:
+    async def get_memory(
+        self, memory_id: str, user_id: Optional[str] = None
+    ) -> Optional[MemoryEntry]:
         """Get a specific memory by ID from Mycelia.
 
         Args:
@@ -625,11 +638,7 @@ class MyceliaMemoryService(MemoryServiceBase):
             jwt_token = await self._get_user_jwt(user_id)
 
             # Get the object by ID (auto-scoped by userId in Mycelia)
-            result = await self._call_resource(
-                action="get",
-                jwt_token=jwt_token,
-                id=memory_id
-            )
+            result = await self._call_resource(action="get", jwt_token=jwt_token, id=memory_id)
 
             if result:
                 return self._mycelia_object_to_memory_entry(result, user_id)
@@ -647,7 +656,7 @@ class MyceliaMemoryService(MemoryServiceBase):
         content: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         user_id: Optional[str] = None,
-        user_email: Optional[str] = None
+        user_email: Optional[str] = None,
     ) -> bool:
         """Update a specific memory's content and/or metadata in Mycelia.
 
@@ -704,10 +713,7 @@ class MyceliaMemoryService(MemoryServiceBase):
 
             # Update the object (auto-scoped by userId in Mycelia)
             result = await self._call_resource(
-                action="update",
-                jwt_token=jwt_token,
-                id=memory_id,
-                object=update_data
+                action="update", jwt_token=jwt_token, id=memory_id, object=update_data
             )
 
             updated_count = result.get("modifiedCount", 0)
@@ -722,7 +728,9 @@ class MyceliaMemoryService(MemoryServiceBase):
             memory_logger.error(f"Failed to update memory via Mycelia: {e}")
             return False
 
-    async def delete_memory(self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None) -> bool:
+    async def delete_memory(
+        self, memory_id: str, user_id: Optional[str] = None, user_email: Optional[str] = None
+    ) -> bool:
         """Delete a specific memory from Mycelia.
 
         Args:
@@ -743,11 +751,7 @@ class MyceliaMemoryService(MemoryServiceBase):
             jwt_token = await self._get_user_jwt(user_id, user_email)
 
             # Delete the object (auto-scoped by userId in Mycelia)
-            result = await self._call_resource(
-                action="delete",
-                jwt_token=jwt_token,
-                id=memory_id
-            )
+            result = await self._call_resource(action="delete", jwt_token=jwt_token, id=memory_id)
 
             deleted_count = result.get("deletedCount", 0)
             if deleted_count > 0:
@@ -779,7 +783,7 @@ class MyceliaMemoryService(MemoryServiceBase):
                 action="list",
                 jwt_token=jwt_token,
                 filters={},  # Auto-scoped by userId
-                options={"limit": 10000}  # Large limit to get all
+                options={"limit": 10000},  # Large limit to get all
             )
 
             # Delete each memory individually
@@ -817,11 +821,48 @@ class MyceliaMemoryService(MemoryServiceBase):
             memory_logger.error(f"Mycelia connection test failed: {e}")
             return False
 
-    def shutdown(self) -> None:
-        """Shutdown Mycelia client and cleanup resources."""
-        memory_logger.info("Shutting down Mycelia memory service")
+    async def aclose(self) -> None:
+        """Asynchronously close Mycelia client and cleanup resources."""
+        memory_logger.info("Closing Mycelia memory service")
         if self._client:
-            # Note: httpx AsyncClient should be closed in an async context
-            # In practice, this will be called during shutdown so we log a warning
-            memory_logger.warning("HTTP client should be closed with await client.aclose()")
+            try:
+                await self._client.aclose()
+                memory_logger.info("✅ Mycelia HTTP client closed successfully")
+            except Exception as e:
+                memory_logger.error(f"Error closing Mycelia HTTP client: {e}")
+        self._initialized = False
+
+    def shutdown(self) -> None:
+        """Shutdown Mycelia client and cleanup resources (sync wrapper)."""
+        memory_logger.info("Shutting down Mycelia memory service")
+
+        if self._client:
+            try:
+                # Try to get the current event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    # No running loop
+                    loop = None
+
+                if loop and loop.is_running():
+                    # If we're in an async context, schedule the close operation on the running loop
+                    memory_logger.info(
+                        "Running event loop detected. Scheduling aclose() on the current loop."
+                    )
+                    try:
+                        # Schedule the coroutine to run on the existing loop
+                        asyncio.ensure_future(self.aclose(), loop=loop)
+                        memory_logger.info("✅ Close operation scheduled on running event loop")
+                    except Exception as e:
+                        memory_logger.error(f"Error scheduling close on running loop: {e}")
+                else:
+                    # No running loop, safe to use run_until_complete
+                    try:
+                        asyncio.get_event_loop().run_until_complete(self.aclose())
+                    except Exception as e:
+                        memory_logger.error(f"Error during shutdown: {e}")
+            except Exception as e:
+                memory_logger.error(f"Unexpected error during shutdown: {e}")
+
         self._initialized = False

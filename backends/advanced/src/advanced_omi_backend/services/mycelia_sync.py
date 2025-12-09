@@ -6,14 +6,16 @@ ensuring that when users access Mycelia directly, they use credentials
 that map to their Friend-Lite user ID.
 """
 
+import base64
+import hashlib
 import logging
 import os
 import secrets
-import hashlib
-import base64
-from typing import Optional, Tuple
-from pymongo import MongoClient
 from datetime import datetime
+from typing import Optional, Tuple
+
+from bson import ObjectId
+from pymongo import MongoClient
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,9 @@ class MyceliaSyncService:
         """Initialize the sync service."""
         # MongoDB configuration
         # MONGODB_URI format: mongodb://host:port/database_name
-        self.mongo_url = os.getenv("MONGODB_URI", os.getenv("MONGO_URL", "mongodb://localhost:27017"))
+        self.mongo_url = os.getenv(
+            "MONGODB_URI", os.getenv("MONGO_URL", "mongodb://localhost:27017")
+        )
 
         # Determine Mycelia database from environment
         # Test environment uses mycelia_test, production uses mycelia
@@ -39,20 +43,18 @@ class MyceliaSyncService:
         else:
             self.friendlite_db = "friend-lite"
 
-        logger.info(f"MyceliaSyncService initialized: {self.mongo_url}, Mycelia DB: {self.mycelia_db}, Friend-Lite DB: {self.friendlite_db}")
+        logger.info(
+            f"MyceliaSyncService initialized: {self.mongo_url}, Mycelia DB: {self.mycelia_db}, Friend-Lite DB: {self.friendlite_db}"
+        )
 
     def _hash_api_key_with_salt(self, api_key: str, salt: bytes) -> str:
         """Hash API key with salt (matches Mycelia's implementation)."""
         h = hashlib.sha256()
         h.update(salt)
-        h.update(api_key.encode('utf-8'))
-        return base64.b64encode(h.digest()).decode('utf-8')
+        h.update(api_key.encode("utf-8"))
+        return base64.b64encode(h.digest()).decode("utf-8")
 
-    def _create_mycelia_api_key(
-        self,
-        user_id: str,
-        user_email: str
-    ) -> Tuple[str, str]:
+    def _create_mycelia_api_key(self, user_id: str, user_email: str) -> Tuple[str, str]:
         """
         Create a Mycelia API key for a Friend-Lite user.
 
@@ -82,11 +84,9 @@ class MyceliaSyncService:
         api_keys_collection = db["api_keys"]
 
         # Check if user already has an active API key
-        existing = api_keys_collection.find_one({
-            "owner": user_id,
-            "isActive": True,
-            "name": f"Friend-Lite Auto ({user_email})"
-        })
+        existing = api_keys_collection.find_one(
+            {"owner": user_id, "isActive": True, "name": f"Friend-Lite Auto ({user_email})"}
+        )
 
         if existing:
             logger.info(f"User {user_email} already has Mycelia API key: {existing['_id']}")
@@ -97,16 +97,10 @@ class MyceliaSyncService:
         # Create new API key document
         api_key_doc = {
             "hashedKey": hashed_key,
-            "salt": base64.b64encode(salt).decode('utf-8'),
+            "salt": base64.b64encode(salt).decode("utf-8"),
             "owner": user_id,  # CRITICAL: owner = Friend-Lite user ID
             "name": f"Friend-Lite Auto ({user_email})",
-            "policies": [
-                {
-                    "resource": "**",
-                    "action": "*",
-                    "effect": "allow"
-                }
-            ],
+            "policies": [{"resource": "**", "action": "*", "effect": "allow"}],
             "openPrefix": open_prefix,
             "createdAt": datetime.utcnow(),
             "isActive": True,
@@ -120,11 +114,7 @@ class MyceliaSyncService:
 
         return client_id, api_key
 
-    def sync_user_to_mycelia(
-        self,
-        user_id: str,
-        user_email: str
-    ) -> Optional[Tuple[str, str]]:
+    def sync_user_to_mycelia(self, user_id: str, user_email: str) -> Optional[Tuple[str, str]]:
         """
         Sync a Friend-Lite user to Mycelia OAuth.
 
@@ -145,7 +135,6 @@ class MyceliaSyncService:
                 db = client[self.friendlite_db]
                 users_collection = db["users"]
 
-                from bson import ObjectId
                 users_collection.update_one(
                     {"_id": ObjectId(user_id)},
                     {
@@ -153,10 +142,10 @@ class MyceliaSyncService:
                             "mycelia_oauth": {
                                 "client_id": client_id,
                                 "created_at": datetime.utcnow(),
-                                "synced": True
+                                "synced": True,
                             }
                         }
-                    }
+                    },
                 )
 
                 logger.info(f"✅ Synced {user_email} with Mycelia OAuth")
@@ -201,9 +190,9 @@ class MyceliaSyncService:
                 client_id, api_key = result
                 if api_key:
                     # Credentials created successfully - don't log them
-                    logger.info("="*70)
+                    logger.info("=" * 70)
                     logger.info("🔑 MYCELIA OAUTH CREDENTIALS CREATED")
-                    logger.info("="*70)
+                    logger.info("=" * 70)
                     logger.info(f"User:          {admin_email}")
                     logger.info(f"Client ID:     {client_id}")
                     logger.info("")
@@ -211,8 +200,10 @@ class MyceliaSyncService:
                     logger.info("   cd backends/advanced/scripts")
                     logger.info("   python create_mycelia_api_key.py")
                     logger.info("")
-                    logger.info("📝 This will display the API key needed for Mycelia frontend setup")
-                    logger.info("="*70)
+                    logger.info(
+                        "📝 This will display the API key needed for Mycelia frontend setup"
+                    )
+                    logger.info("=" * 70)
 
             return result
 

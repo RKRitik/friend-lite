@@ -47,6 +47,16 @@ export default function FrappeGanttTimeline() {
   const scrollLeft = useRef(0)
   const { user } = useAuth()
 
+  // HTML escape function to prevent XSS attacks
+  const escapeHtml = (unsafe: string): string => {
+    return unsafe
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+  }
+
   // Demo data for testing the Timeline visualization - spans multiple years
   const getDemoMemories = (): MemoryWithTimeRange[] => {
     return [
@@ -251,7 +261,13 @@ export default function FrappeGanttTimeline() {
         date_format: 'YYYY-MM-DD',
         language: 'en',
         custom_popup_html: (task: any) => {
-          const memory = displayMemories.find(m => task.id.startsWith(m.id))
+          // Extract memoryId from task.id (format: "memoryId-index")
+          // Use lastIndexOf to handle memory IDs that contain dashes (e.g., UUIDs)
+          const lastDashIndex = task.id.lastIndexOf('-')
+          const memoryId = lastDashIndex !== -1 ? task.id.slice(0, lastDashIndex) : task.id
+
+          // Find memory using exact equality instead of prefix matching
+          const memory = displayMemories.find(m => m.id === memoryId)
           const startDate = new Date(task._start)
           const endDate = new Date(task._end)
           const formatOptions: Intl.DateTimeFormatOptions = {
@@ -263,14 +279,14 @@ export default function FrappeGanttTimeline() {
           }
           return `
             <div class="popup-wrapper" style="background: white; padding: 12px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 250px;">
-              <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">${task.name}</h3>
+              <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">${escapeHtml(task.name)}</h3>
               <p style="margin: 4px 0; font-size: 12px; color: #666;">
                 <strong>Start:</strong> ${startDate.toLocaleDateString('en-US', formatOptions)}
               </p>
               <p style="margin: 4px 0; font-size: 12px; color: #666;">
                 <strong>End:</strong> ${endDate.toLocaleDateString('en-US', formatOptions)}
               </p>
-              ${memory?.content ? `<p style="margin: 8px 0 0 0; font-size: 12px; color: #333; border-top: 1px solid #eee; padding-top: 8px;">${memory.content}</p>` : ''}
+              ${memory?.content ? `<p style="margin: 8px 0 0 0; font-size: 12px; color: #333; border-top: 1px solid #eee; padding-top: 8px;">${escapeHtml(memory.content)}</p>` : ''}
             </div>
           `
         }
