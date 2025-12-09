@@ -244,18 +244,39 @@ export default function MyceliaTimeline() {
             minute: '2-digit'
           })
 
+          // Build tooltip using DOM APIs to prevent XSS
           tooltip
             .style('opacity', 1)
             .style('left', `${event.pageX + 10}px`)
             .style('top', `${event.pageY - 10}px`)
-            .html(`
-              <div class="font-semibold text-sm mb-1">${d.name}</div>
-              <div class="text-xs text-gray-600 dark:text-gray-300">
-                <div><strong>Start:</strong> ${startDate}</div>
-                <div><strong>End:</strong> ${endDate}</div>
-                <div class="mt-1 text-blue-600 dark:text-blue-400">Click to view memory</div>
-              </div>
-            `)
+            .html('') // Clear existing content
+
+          // Add title (user-controlled content via textContent)
+          tooltip
+            .append('div')
+            .attr('class', 'font-semibold text-sm mb-1')
+            .text(d.name) // Safe: uses textContent, not innerHTML
+
+          // Add details container
+          const detailsDiv = tooltip
+            .append('div')
+            .attr('class', 'text-xs text-gray-600 dark:text-gray-300')
+
+          // Add start date
+          const startDiv = detailsDiv.append('div')
+          startDiv.append('strong').text('Start: ')
+          startDiv.append('span').text(startDate) // Safe: uses textContent
+
+          // Add end date
+          const endDiv = detailsDiv.append('div')
+          endDiv.append('strong').text('End: ')
+          endDiv.append('span').text(endDate) // Safe: uses textContent
+
+          // Add static click instruction
+          detailsDiv
+            .append('div')
+            .attr('class', 'mt-1 text-blue-600 dark:text-blue-400')
+            .text('Click to view memory')
         }
       })
       .on('mouseout', function() {
@@ -269,8 +290,13 @@ export default function MyceliaTimeline() {
       .on('click', function(event, d) {
         event.stopPropagation()
         // Extract memory ID from task ID (format: "memory-id-rangeIndex")
-        const memoryId = d.id.split('-').slice(0, -1).join('-')
-        navigate(`/memories/${memoryId}`)
+        // Use lastIndexOf to handle memory IDs that contain dashes (e.g., UUIDs)
+        const lastDashIndex = d.id.lastIndexOf('-')
+        const memoryId = lastDashIndex !== -1 ? d.id.slice(0, lastDashIndex) : d.id
+
+        if (memoryId) {
+          navigate(`/memories/${memoryId}`)
+        }
       })
 
     // Add labels

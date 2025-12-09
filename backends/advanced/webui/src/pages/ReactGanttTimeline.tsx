@@ -144,10 +144,17 @@ export default function ReactGanttTimeline() {
   }
 
   const fetchMemoriesWithTimeRanges = async () => {
+    // Guard: only fetch if user ID exists
+    if (!user?.id) {
+      setError('User not authenticated')
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     setError(null)
     try {
-      const response = await memoriesApi.getAll()
+      const response = await memoriesApi.getAll(user.id)
 
       // Extract memories from response
       const memoriesData = response.data.memories || response.data || []

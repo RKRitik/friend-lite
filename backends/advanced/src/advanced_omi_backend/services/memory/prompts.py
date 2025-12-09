@@ -5,7 +5,7 @@ This module contains the prompts used by the LLM providers for:
 2. Updating memory with new facts (DEFAULT_UPDATE_MEMORY_PROMPT)
 3. Answering questions from memory (MEMORY_ANSWER_PROMPT)
 4. Procedural memory for task tracking (PROCEDURAL_MEMORY_SYSTEM_PROMPT)
-5. Temporal and entity extraction (TEMPORAL_ENTITY_EXTRACTION_PROMPT)
+5. Temporal and entity extraction (get_temporal_entity_extraction_prompt())
 """
 
 from datetime import datetime, timedelta
@@ -551,4 +551,6 @@ Output:
 """
 
 
-TEMPORAL_ENTITY_EXTRACTION_PROMPT = build_temporal_extraction_prompt(datetime.now())
+def get_temporal_entity_extraction_prompt() -> str:
+    """Get the temporal entity extraction prompt with current date/time."""
+    return build_temporal_extraction_prompt(datetime.now())

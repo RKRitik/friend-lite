@@ -6,14 +6,16 @@ ensuring that when users access Mycelia directly, they use credentials
 that map to their Chronicle user ID.
 """
 
+import base64
+import hashlib
 import logging
 import os
 import secrets
-import hashlib
-import base64
-from typing import Optional, Tuple
-from pymongo import MongoClient
 from datetime import datetime
+from typing import Optional, Tuple
+
+from bson import ObjectId
+from pymongo import MongoClient
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,9 @@ class MyceliaSyncService:
         """Initialize the sync service."""
         # MongoDB configuration
         # MONGODB_URI format: mongodb://host:port/database_name
-        self.mongo_url = os.getenv("MONGODB_URI", os.getenv("MONGO_URL", "mongodb://localhost:27017"))
+        self.mongo_url = os.getenv(
+            "MONGODB_URI", os.getenv("MONGO_URL", "mongodb://localhost:27017")
+        )
 
         # Determine Mycelia database from environment
         # Test environment uses mycelia_test, production uses mycelia
@@ -45,14 +49,10 @@ class MyceliaSyncService:
         """Hash API key with salt (matches Mycelia's implementation)."""
         h = hashlib.sha256()
         h.update(salt)
-        h.update(api_key.encode('utf-8'))
-        return base64.b64encode(h.digest()).decode('utf-8')
+        h.update(api_key.encode("utf-8"))
+        return base64.b64encode(h.digest()).decode("utf-8")
 
-    def _create_mycelia_api_key(
-        self,
-        user_id: str,
-        user_email: str
-    ) -> Tuple[str, str]:
+    def _create_mycelia_api_key(self, user_id: str, user_email: str) -> Tuple[str, str]:
         """
         Create a Mycelia API key for a Chronicle user.
 
@@ -120,11 +120,7 @@ class MyceliaSyncService:
 
         return client_id, api_key
 
-    def sync_user_to_mycelia(
-        self,
-        user_id: str,
-        user_email: str
-    ) -> Optional[Tuple[str, str]]:
+    def sync_user_to_mycelia(self, user_id: str, user_email: str) -> Optional[Tuple[str, str]]:
         """
         Sync a Chronicle user to Mycelia OAuth.
 
@@ -145,7 +141,6 @@ class MyceliaSyncService:
                 db = client[self.chronicle_db]
                 users_collection = db["users"]
 
-                from bson import ObjectId
                 users_collection.update_one(
                     {"_id": ObjectId(user_id)},
                     {
@@ -153,10 +148,10 @@ class MyceliaSyncService:
                             "mycelia_oauth": {
                                 "client_id": client_id,
                                 "created_at": datetime.utcnow(),
-                                "synced": True
+                                "synced": True,
                             }
                         }
-                    }
+                    },
                 )
 
                 logger.info(f"✅ Synced {user_email} with Mycelia OAuth")
@@ -201,9 +196,9 @@ class MyceliaSyncService:
                 client_id, api_key = result
                 if api_key:
                     # Credentials created successfully - don't log them
-                    logger.info("="*70)
+                    logger.info("=" * 70)
                     logger.info("🔑 MYCELIA OAUTH CREDENTIALS CREATED")
-                    logger.info("="*70)
+                    logger.info("=" * 70)
                     logger.info(f"User:          {admin_email}")
                     logger.info(f"Client ID:     {client_id}")
                     logger.info("")
@@ -211,8 +206,10 @@ class MyceliaSyncService:
                     logger.info("   cd backends/advanced/scripts")
                     logger.info("   python create_mycelia_api_key.py")
                     logger.info("")
-                    logger.info("📝 This will display the API key needed for Mycelia frontend setup")
-                    logger.info("="*70)
+                    logger.info(
+                        "📝 This will display the API key needed for Mycelia frontend setup"
+                    )
+                    logger.info("=" * 70)
 
             return result
 
