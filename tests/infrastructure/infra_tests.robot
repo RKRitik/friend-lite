@@ -258,9 +258,8 @@ WebSocket Disconnect Conversation End Reason Test
     ${device_name}=    Set Variable    disconnect
     ${stream_id}=    Open Audio Stream    device_name=${device_name}
 
-    # Send enough audio to trigger speech detection (test audio has speech)
-    # Test audio is 4 minutes long at 16kHz, sending 200 chunks ensures enough speech
-    Send Audio Chunks To Stream    ${stream_id}    ${TEST_AUDIO_FILE}    num_chunks=200
+    # Send audio fast (no realtime pacing) to simulate disconnect before END signal
+    Send Audio Chunks To Stream    ${stream_id}    ${TEST_AUDIO_FILE}    num_chunks=200 
 
     # Wait for conversation job to be created and conversation_id to be populated
     # Transcription + speech analysis takes time (30-60s with queue)
