@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { Calendar } from 'lucide-react'
 import FrappeGanttTimeline from './FrappeGanttTimeline'
-import ReactGanttTimeline from './ReactGanttTimeline'
 import MyceliaTimeline from './MyceliaTimeline'
 
-type TimelineImplementation = 'frappe' | 'react-gantt' | 'mycelia'
+type TimelineImplementation = 'frappe' | 'mycelia'
 
 export default function TimelineRouter() {
   const [activeImplementation, setActiveImplementation] = useState<TimelineImplementation>('frappe')
@@ -43,21 +42,6 @@ export default function TimelineRouter() {
             </span>
           </button>
           <button
-            onClick={() => setActiveImplementation('react-gantt')}
-            className={`
-              py-4 px-1 border-b-2 font-medium text-sm
-              ${activeImplementation === 'react-gantt'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-              }
-            `}
-          >
-            React Gantt Timeline
-            <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-1 rounded">
-              Beta
-            </span>
-          </button>
-          <button
             onClick={() => setActiveImplementation('mycelia')}
             className={`
               py-4 px-1 border-b-2 font-medium text-sm
@@ -78,7 +62,6 @@ export default function TimelineRouter() {
       {/* Timeline Implementation */}
       <div>
         {activeImplementation === 'frappe' && <FrappeGanttTimeline />}
-        {activeImplementation === 'react-gantt' && <ReactGanttTimeline />}
         {activeImplementation === 'mycelia' && <MyceliaTimeline />}
       </div>
     </div>
