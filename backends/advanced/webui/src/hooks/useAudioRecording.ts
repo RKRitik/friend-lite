@@ -100,8 +100,8 @@ export const useAudioRecording = (): UseAudioRecordingReturn => {
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
-  const durationIntervalRef = useRef<number>()
-  const keepAliveIntervalRef = useRef<number>()
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval>>()
+  const keepAliveIntervalRef = useRef<ReturnType<typeof setInterval>>()
   const audioProcessingStartedRef = useRef(false)
   const chunkCountRef = useRef(0)
   // Note: Legacy message queue code removed as it was unused

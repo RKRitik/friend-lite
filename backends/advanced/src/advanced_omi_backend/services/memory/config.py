@@ -36,6 +36,7 @@ class MemoryProvider(Enum):
     """Supported memory service providers."""
     FRIEND_LITE = "friend_lite"      # Default sophisticated implementation
     OPENMEMORY_MCP = "openmemory_mcp"  # OpenMemory MCP backend
+    MYCELIA = "mycelia"                # Mycelia memory backend
 
 
 @dataclass
@@ -48,6 +49,7 @@ class MemoryConfig:
     vector_store_config: Dict[str, Any] = None
     embedder_config: Dict[str, Any] = None
     openmemory_config: Dict[str, Any] = None  # Configuration for OpenMemory MCP
+    mycelia_config: Dict[str, Any] = None  # Configuration for Mycelia
     extraction_prompt: str = None
     extraction_enabled: bool = True
     timeout_seconds: int = 1200
@@ -122,6 +124,23 @@ def create_openmemory_config(
     }
 
 
+def create_mycelia_config(
+    api_url: str = "http://localhost:8080",
+    api_key: str = None,
+    timeout: int = 30,
+    **kwargs
+) -> Dict[str, Any]:
+    """Create Mycelia configuration."""
+    config = {
+        "api_url": api_url,
+        "timeout": timeout,
+    }
+    if api_key:
+        config["api_key"] = api_key
+    config.update(kwargs)
+    return config
+
+
 def build_memory_config_from_env() -> MemoryConfig:
     """Build memory configuration from environment variables and YAML config."""
     try:
@@ -140,13 +159,44 @@ def build_memory_config_from_env() -> MemoryConfig:
                 user_id=os.getenv("OPENMEMORY_USER_ID", "default"),
                 timeout=int(os.getenv("OPENMEMORY_TIMEOUT", "30"))
             )
-            
+
             memory_logger.info(f"🔧 Memory config: Provider=OpenMemory MCP, URL={openmemory_config['server_url']}")
-            
+
             return MemoryConfig(
                 memory_provider=memory_provider_enum,
                 openmemory_config=openmemory_config,
                 timeout_seconds=int(os.getenv("OPENMEMORY_TIMEOUT", "30"))
+            )
+
+        # For Mycelia provider, build mycelia_config + llm_config (for temporal extraction)
+        if memory_provider_enum == MemoryProvider.MYCELIA:
+            mycelia_config = create_mycelia_config(
+                api_url=os.getenv("MYCELIA_URL", "http://localhost:5173"),
+                timeout=int(os.getenv("MYCELIA_TIMEOUT", "30"))
+            )
+
+            # Build LLM config for temporal extraction (Mycelia provider uses OpenAI directly)
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if not openai_api_key:
+                memory_logger.warning("OPENAI_API_KEY not set - temporal extraction will be disabled")
+                llm_config = None
+            else:
+                model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+                base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+                llm_config = create_openai_config(
+                    api_key=openai_api_key,
+                    model=model,
+                    base_url=base_url
+                )
+                memory_logger.info(f"🔧 Mycelia temporal extraction: LLM={model}")
+
+            memory_logger.info(f"🔧 Memory config: Provider=Mycelia, URL={mycelia_config['api_url']}")
+
+            return MemoryConfig(
+                memory_provider=memory_provider_enum,
+                mycelia_config=mycelia_config,
+                llm_config=llm_config,
+                timeout_seconds=int(os.getenv("MYCELIA_TIMEOUT", "30"))
             )
         
         # For Friend-Lite provider, use existing complex configuration

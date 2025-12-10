@@ -105,15 +105,16 @@ export const conversationsApi = {
 
 export const memoriesApi = {
   getAll: (userId?: string) => api.get('/api/memories', { params: userId ? { user_id: userId } : {} }),
+  getById: (id: string, userId?: string) => api.get(`/api/memories/${id}`, { params: userId ? { user_id: userId } : {} }),
   getUnfiltered: (userId?: string) => api.get('/api/memories/unfiltered', { params: userId ? { user_id: userId } : {} }),
-  search: (query: string, userId?: string, limit: number = 20, scoreThreshold?: number) => 
-    api.get('/api/memories/search', { 
-      params: { 
-        query, 
-        ...(userId && { user_id: userId }), 
+  search: (query: string, userId?: string, limit: number = 20, scoreThreshold?: number) =>
+    api.get('/api/memories/search', {
+      params: {
+        query,
+        ...(userId && { user_id: userId }),
         limit,
         ...(scoreThreshold !== undefined && { score_threshold: scoreThreshold / 100 }) // Convert percentage to decimal
-      } 
+      }
     }),
   delete: (id: string) => api.delete(`/api/memories/${id}`),
   deleteAll: () => api.delete('/api/admin/memory/delete-all'),
@@ -138,15 +139,19 @@ export const systemApi = {
   
   // Memory Configuration Management
   getMemoryConfigRaw: () => api.get('/api/admin/memory/config/raw'),
-  updateMemoryConfigRaw: (configYaml: string) => 
+  updateMemoryConfigRaw: (configYaml: string) =>
     api.post('/api/admin/memory/config/raw', configYaml, {
       headers: { 'Content-Type': 'text/plain' }
     }),
-  validateMemoryConfig: (configYaml: string) => 
+  validateMemoryConfig: (configYaml: string) =>
     api.post('/api/admin/memory/config/validate', configYaml, {
       headers: { 'Content-Type': 'text/plain' }
     }),
   reloadMemoryConfig: () => api.post('/api/admin/memory/config/reload'),
+
+  // Memory Provider Management
+  getMemoryProvider: () => api.get('/api/admin/memory/provider'),
+  setMemoryProvider: (provider: string) => api.post('/api/admin/memory/provider', { provider }),
 }
 
 export const queueApi = {
