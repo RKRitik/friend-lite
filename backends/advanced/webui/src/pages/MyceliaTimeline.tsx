@@ -215,15 +215,15 @@ export default function MyceliaTimeline() {
 
     // Bar background with click and hover
     bars.append('rect')
-      .attr('x', d => xScale(d.start))
-      .attr('y', d => yScale(d.id)!)
-      .attr('width', d => Math.max(2, xScale(d.end) - xScale(d.start)))
+      .attr('x', (d: TimelineTask) => xScale(d.start))
+      .attr('y', (d: TimelineTask) => yScale(d.id)!)
+      .attr('width', (d: TimelineTask) => Math.max(2, xScale(d.end) - xScale(d.start)))
       .attr('height', yScale.bandwidth())
-      .attr('fill', d => d.color)
+      .attr('fill', (d: TimelineTask) => d.color)
       .attr('rx', 4)
       .style('opacity', 0.8)
       .style('cursor', 'pointer')
-      .on('mouseover', function(event, d) {
+      .on('mouseover', function(this: SVGRectElement, event: MouseEvent, d: TimelineTask) {
         d3.select(this).style('opacity', 1)
 
         // Show tooltip
@@ -279,7 +279,7 @@ export default function MyceliaTimeline() {
             .text('Click to view memory')
         }
       })
-      .on('mouseout', function() {
+      .on('mouseout', function(this: SVGRectElement) {
         d3.select(this).style('opacity', 0.8)
 
         // Hide tooltip
@@ -287,7 +287,7 @@ export default function MyceliaTimeline() {
           d3.select(tooltipRef.current).style('opacity', 0)
         }
       })
-      .on('click', function(event, d) {
+      .on('click', function(this: SVGRectElement, event: MouseEvent, d: TimelineTask) {
         event.stopPropagation()
         // Extract memory ID from task ID (format: "memory-id-rangeIndex")
         // Use lastIndexOf to handle memory IDs that contain dashes (e.g., UUIDs)
@@ -307,17 +307,17 @@ export default function MyceliaTimeline() {
       .enter()
       .append('text')
       .attr('x', -10)
-      .attr('y', d => yScale(d.id)! + yScale.bandwidth() / 2)
+      .attr('y', (d: TimelineTask) => yScale(d.id)! + yScale.bandwidth() / 2)
       .attr('dy', '0.35em')
       .attr('text-anchor', 'end')
-      .text(d => d.name)
+      .text((d: TimelineTask) => d.name)
       .style('fill', 'currentColor')
       .style('font-size', '12px')
 
     // Zoom behavior
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.5, 5])
-      .on('zoom', (event) => {
+      .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
         const transform = event.transform
 
         // Update x scale
@@ -332,8 +332,8 @@ export default function MyceliaTimeline() {
 
         // Update bars
         g.selectAll<SVGRectElement, TimelineTask>('.bars rect')
-          .attr('x', d => newXScale(d.start))
-          .attr('width', d => Math.max(2, newXScale(d.end) - newXScale(d.start)))
+          .attr('x', (d: TimelineTask) => newXScale(d.start))
+          .attr('width', (d: TimelineTask) => Math.max(2, newXScale(d.end) - newXScale(d.start)))
       })
 
     svg.call(zoom as any)

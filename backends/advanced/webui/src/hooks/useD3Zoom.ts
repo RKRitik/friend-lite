@@ -25,7 +25,7 @@ export function useD3Zoom(options: UseD3ZoomOptions = {}) {
       onZoom?.(t)
 
       // Synchronize zoom across all zoomable SVG elements
-      d3.selectAll<SVGSVGElement, unknown>('.zoomable').each(function () {
+      d3.selectAll<SVGSVGElement, unknown>('.zoomable').each(function (this: SVGSVGElement) {
         const svg = d3.select(this)
         const node = svg.node()
 
@@ -47,9 +47,10 @@ export function useD3Zoom(options: UseD3ZoomOptions = {}) {
         .on('zoom', handleZoom)
         .wheelDelta(wheelDelta)
         .touchable(() => true)
-        .filter((event) => {
+        .filter((event: Event) => {
+          const mouseEvent = event as MouseEvent
           if (event.type === 'dblclick') return false
-          if (event.button && event.button !== 0) return false
+          if (mouseEvent.button && mouseEvent.button !== 0) return false
           return true
         }),
     [handleZoom, scaleExtent, wheelDelta]
