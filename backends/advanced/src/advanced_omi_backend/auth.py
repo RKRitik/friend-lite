@@ -112,7 +112,7 @@ def generate_jwt_for_user(user_id: str, user_email: str) -> str:
         user_email: User's email address
 
     Returns:
-        JWT token string valid for 24 hours
+        JWT token string valid for JWT_LIFETIME_SECONDS (default: 24 hours)
 
     Example:
         >>> token = generate_jwt_for_user("507f1f77bcf86cd799439011", "user@example.com")
