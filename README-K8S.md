@@ -266,10 +266,13 @@ chronicle/
 
 1. **Clone Repository**
    ```bash
-   # Clone Chronicle repository
-   git clone https://github.com/yourusername/chronicle.git
-   cd chronicle
-   
+   # Clone Friend-Lite repository with submodules
+   git clone --recursive https://github.com/chronicle-ai/chronicle.git
+   cd friend-lite
+
+   # If you already cloned without --recursive, initialize submodules:
+   # git submodule update --init --recursive
+
    # Verify template files are present
    ls -la skaffold.env.template
    ls -la backends/advanced/.env.template

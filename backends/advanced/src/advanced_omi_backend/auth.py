@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 JWT_LIFETIME_SECONDS = int(os.getenv("JWT_LIFETIME_SECONDS", "86400"))
 
+# JWT configuration
+JWT_LIFETIME_SECONDS = 86400  # 24 hours
+
 
 @overload
 def _verify_configured(var_name: str, *, optional: Literal[False] = False) -> str: ...
