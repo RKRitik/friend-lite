@@ -62,8 +62,10 @@ start_workers() {
         AUDIO_STREAM_DEEPGRAM_WORKER_PID=""
     fi
 
+
     # Only start Parakeet worker if PARAKEET_ASR_URL is set
     if [ -n "$PARAKEET_ASR_URL" ]; then
+
         echo "🎵 Starting audio stream Parakeet worker (1 worker for sequential processing)..."
         uv run python -m advanced_omi_backend.workers.audio_stream_parakeet_worker &
         AUDIO_STREAM_PARAKEET_WORKER_PID=$!
@@ -82,6 +84,7 @@ start_workers() {
     echo "  - Audio persistence worker: PID $AUDIO_PERSISTENCE_WORKER_PID (audio queue - file rotation)"
     [ -n "$AUDIO_STREAM_DEEPGRAM_WORKER_PID" ] && echo "  - Audio stream Deepgram worker: PID $AUDIO_STREAM_DEEPGRAM_WORKER_PID (Redis Streams consumer)"
     [ -n "$AUDIO_STREAM_PARAKEET_WORKER_PID" ] && echo "  - Audio stream Parakeet worker: PID $AUDIO_STREAM_PARAKEET_WORKER_PID (Redis Streams consumer)"
+
 }
 
 # Function to check worker registration health
