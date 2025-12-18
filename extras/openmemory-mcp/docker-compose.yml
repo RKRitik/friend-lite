@@ -27,6 +27,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - default
+      - chronicle-network
 
   # OpenMemory UI (starts by default with the MCP server)
   openmemory-ui:
@@ -39,3 +42,9 @@ services:
     depends_on:
       - openmemory-mcp
     restart: unless-stopped
+
+networks:
+  default:
+    name: openmemory-mcp_default
+  chronicle-network:
+    external: true
