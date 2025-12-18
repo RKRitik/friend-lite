@@ -82,9 +82,8 @@ start_workers() {
     echo "  - RQ worker 5: PID $RQ_WORKER_5_PID (transcription, memory, default)"
     echo "  - RQ worker 6: PID $RQ_WORKER_6_PID (transcription, memory, default)"
     echo "  - Audio persistence worker: PID $AUDIO_PERSISTENCE_WORKER_PID (audio queue - file rotation)"
-    [ -n "$AUDIO_STREAM_DEEPGRAM_WORKER_PID" ] && echo "  - Audio stream Deepgram worker: PID $AUDIO_STREAM_DEEPGRAM_WORKER_PID (Redis Streams consumer)"
-    [ -n "$AUDIO_STREAM_PARAKEET_WORKER_PID" ] && echo "  - Audio stream Parakeet worker: PID $AUDIO_STREAM_PARAKEET_WORKER_PID (Redis Streams consumer)"
-
+    [ -n "$AUDIO_STREAM_DEEPGRAM_WORKER_PID" ] && echo "  - Audio stream Deepgram worker: PID $AUDIO_STREAM_DEEPGRAM_WORKER_PID (Redis Streams consumer)" || true
+    [ -n "$AUDIO_STREAM_PARAKEET_WORKER_PID" ] && echo "  - Audio stream Parakeet worker: PID $AUDIO_STREAM_PARAKEET_WORKER_PID (Redis Streams consumer)" || true
 }
 
 # Function to check worker registration health
