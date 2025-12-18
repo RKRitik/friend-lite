@@ -160,9 +160,19 @@ export DOCKER_BUILDKIT=0
 
 # Run the integration test with extended timeout (mem0 needs time for comprehensive extraction)
 print_info "Starting integration test (timeout: 15 minutes)..."
-timeout 900 uv run pytest tests/test_integration.py::test_full_pipeline_integration -v -s --tb=short --log-cli-level=INFO
+if timeout 900 uv run pytest tests/test_integration.py::test_full_pipeline_integration -v -s --tb=short --log-cli-level=INFO; then
+    print_success "Integration tests completed successfully!"
+else
+    TEST_EXIT_CODE=$?
+    print_error "Integration tests FAILED with exit code: $TEST_EXIT_CODE"
 
-print_success "Integration tests completed successfully!"
+    # Clean up test containers before exiting
+    print_info "Cleaning up test containers after failure..."
+    docker compose -f docker-compose-test.yml down -v || true
+    docker system prune -f || true
+
+    exit $TEST_EXIT_CODE
+fi
 
 # Clean up test containers
 print_info "Cleaning up test containers..."
