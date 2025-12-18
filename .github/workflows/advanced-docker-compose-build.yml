@@ -117,13 +117,6 @@ jobs:
           docker system prune -a -f
           df -h
 
-      - name: Initialize OpenMemory cache
-        run: |
-          echo "Initializing OpenMemory cache..."
-          cd ../../extras/openmemory-mcp
-          chmod +x init-cache.sh
-          ./init-cache.sh
-
       - name: Determine version
         id: version
         run: |
