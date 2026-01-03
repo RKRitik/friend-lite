@@ -13,6 +13,49 @@ This supports a comprehensive web dashboard for management.
 
 **❌ No Backward Compatibility**: Do NOT add backward compatibility code unless explicitly requested. This includes fallback logic, legacy field support, or compatibility layers. Always ask before adding backward compatibility - in most cases the answer is no during active development.
 
+## Initial Setup & Configuration
+
+Chronicle includes an **interactive setup wizard** for easy configuration. The wizard guides you through:
+- Service selection (backend + optional services)
+- Authentication setup (admin account, JWT secrets)
+- Transcription provider configuration (Deepgram, Mistral, or offline ASR)
+- LLM provider setup (OpenAI or Ollama)
+- Memory provider selection (Chronicle Native with Qdrant or OpenMemory MCP)
+- Network configuration and HTTPS setup
+- Optional services (speaker recognition, Parakeet ASR)
+
+### Quick Start
+```bash
+# Run the interactive setup wizard from project root
+uv run python wizard.py
+
+# Or use the quickstart guide for step-by-step instructions
+# See quickstart.md for detailed walkthrough
+```
+
+### Setup Documentation
+For detailed setup instructions and troubleshooting, see:
+- **[@quickstart.md](quickstart.md)**: Beginner-friendly step-by-step setup guide
+- **[@Docs/init-system.md](Docs/init-system.md)**: Complete initialization system architecture and design
+- **[@Docs/getting-started.md](Docs/getting-started.md)**: Technical quickstart with advanced configuration
+- **[@backends/advanced/SETUP_SCRIPTS.md](backends/advanced/SETUP_SCRIPTS.md)**: Setup scripts reference and usage examples
+- **[@backends/advanced/Docs/quickstart.md](backends/advanced/Docs/quickstart.md)**: Backend-specific setup guide
+
+### Wizard Architecture
+The initialization system uses a **root orchestrator pattern**:
+- **`wizard.py`**: Root setup orchestrator for service selection and delegation
+- **`backends/advanced/init.py`**: Backend configuration wizard
+- **`extras/speaker-recognition/init.py`**: Speaker recognition setup
+- **Service setup scripts**: Individual setup for ASR services and OpenMemory MCP
+
+Key features:
+- Interactive prompts with validation
+- API key masking and secure credential handling
+- Environment file generation with placeholders
+- HTTPS configuration with SSL certificate generation
+- Service status display and health checks
+- Automatic backup of existing configurations
+
 ## Development Commands
 
 ### Backend Development (Advanced Backend - Primary)
@@ -73,11 +116,11 @@ cp .env.template .env  # Configure API keys
 
 # Manual test execution (for debugging)
 source .env && export DEEPGRAM_API_KEY && export OPENAI_API_KEY
-uv run pytest tests/test_integration.py::test_full_pipeline_integration -v -s
+uv run robot --outputdir test-results --loglevel INFO ../../tests/integration/integration_test.robot
 
 # Leave test containers running for debugging (don't auto-cleanup)
 CLEANUP_CONTAINERS=false source .env && export DEEPGRAM_API_KEY && export OPENAI_API_KEY
-uv run pytest tests/test_integration.py::test_full_pipeline_integration -v -s
+uv run robot --outputdir test-results --loglevel INFO ../../tests/integration/integration_test.robot
 
 # Manual cleanup when needed
 docker compose -f docker-compose-test.yml down -v
@@ -347,7 +390,7 @@ docker compose up --build -d
 
 ### Testing Strategy
 - **Local Test Scripts**: Simplified scripts (`./run-test.sh`) mirror CI workflows for local development
-- **End-to-End Integration**: `test_integration.py` validates complete audio processing pipeline
+- **End-to-End Integration**: Robot Framework tests (`tests/integration/integration_test.robot`) validate complete audio processing pipeline
 - **Speaker Recognition Tests**: `test_speaker_service_integration.py` validates speaker identification
 - **Environment Flexibility**: Tests work with both local .env files and CI environment variables
 - **Automated Cleanup**: Test containers are automatically removed after execution

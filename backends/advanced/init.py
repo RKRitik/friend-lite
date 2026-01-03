@@ -15,11 +15,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
+import yaml
 from dotenv import get_key, set_key
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.text import Text
+
+# Add repo root to path for config_manager import
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from config_manager import ConfigManager
 
 
 class ChronicleSetup:
@@ -27,10 +32,21 @@ class ChronicleSetup:
         self.console = Console()
         self.config: Dict[str, Any] = {}
         self.args = args or argparse.Namespace()
-        
+        self.config_yml_path = Path("../../config/config.yml")  # Main config at config/config.yml
+
         # Check if we're in the right directory
         if not Path("pyproject.toml").exists() or not Path("src").exists():
             self.console.print("[red][ERROR][/red] Please run this script from the backends/advanced directory")
+            sys.exit(1)
+
+        # Initialize ConfigManager (single source of truth for config.yml)
+        self.config_manager = ConfigManager(service_path="backends/advanced")
+        self.console.print(f"[blue][INFO][/blue] Using config.yml at: {self.config_manager.config_yml_path}")
+
+        # Verify config.yml exists - fail fast if missing
+        if not self.config_manager.config_yml_path.exists():
+            self.console.print(f"[red][ERROR][/red] config.yml not found at {self.config_manager.config_yml_path}")
+            self.console.print("[red][ERROR][/red] Run wizard.py from project root to create config.yml")
             sys.exit(1)
 
     def print_header(self, title: str):
@@ -120,6 +136,7 @@ class ChronicleSetup:
 
         return f"{key_clean[:show_chars]}{'*' * min(15, len(key_clean) - show_chars * 2)}{key_clean[-show_chars:]}"
 
+
     def setup_authentication(self):
         """Configure authentication settings"""
         self.print_section("Authentication Setup")
@@ -133,16 +150,19 @@ class ChronicleSetup:
         self.console.print("[green][SUCCESS][/green] Admin account configured")
 
     def setup_transcription(self):
-        """Configure transcription provider"""
+        """Configure transcription provider - updates config.yml and .env"""
         self.print_section("Speech-to-Text Configuration")
-        
+
+        self.console.print("[blue][INFO][/blue] Provider selection is configured in config.yml (defaults.stt)")
+        self.console.print("[blue][INFO][/blue] API keys are stored in .env")
+        self.console.print()
+
         choices = {
-            "1": "Deepgram (recommended - high quality, requires API key)",
-            "2": "Mistral (Voxtral models - requires API key)", 
-            "3": "Offline (Parakeet ASR - requires GPU, runs locally)",
-            "4": "None (skip transcription setup)"
+            "1": "Deepgram (recommended - high quality, cloud-based)",
+            "2": "Offline (Parakeet ASR - requires GPU, runs locally)",
+            "3": "None (skip transcription setup)"
         }
-        
+
         choice = self.prompt_choice("Choose your transcription provider:", choices, "1")
 
         if choice == "1":
@@ -160,60 +180,50 @@ class ChronicleSetup:
                 api_key = self.prompt_value("Deepgram API key (leave empty to skip)", "")
 
             if api_key:
-                self.config["TRANSCRIPTION_PROVIDER"] = "deepgram"
+                # Write API key to .env
                 self.config["DEEPGRAM_API_KEY"] = api_key
-                self.console.print("[green][SUCCESS][/green] Deepgram configured")
+
+                # Update config.yml to use Deepgram
+                self.config_manager.update_config_defaults({"stt": "stt-deepgram"})
+
+                self.console.print("[green][SUCCESS][/green] Deepgram configured in config.yml and .env")
+                self.console.print("[blue][INFO][/blue] Set defaults.stt: stt-deepgram")
             else:
                 self.console.print("[yellow][WARNING][/yellow] No API key provided - transcription will not work")
 
         elif choice == "2":
-            self.config["TRANSCRIPTION_PROVIDER"] = "mistral"
-            self.console.print("[blue][INFO][/blue] Mistral selected")
-            self.console.print("Get your API key from: https://console.mistral.ai/")
-
-            # Check for existing API key
-            existing_key = self.read_existing_env_value("MISTRAL_API_KEY")
-            if existing_key and existing_key not in ['your_mistral_api_key_here', 'your-mistral-key-here']:
-                masked_key = self.mask_api_key(existing_key)
-                prompt_text = f"Mistral API key ({masked_key}) [press Enter to reuse, or enter new]"
-                api_key_input = self.prompt_value(prompt_text, "")
-                api_key = api_key_input if api_key_input else existing_key
-            else:
-                api_key = self.prompt_value("Mistral API key (leave empty to skip)", "")
-
-            model = self.prompt_value("Mistral model", "voxtral-mini-2507")
-
-            if api_key:
-                self.config["MISTRAL_API_KEY"] = api_key
-                self.config["MISTRAL_MODEL"] = model
-                self.console.print("[green][SUCCESS][/green] Mistral configured")
-            else:
-                self.console.print("[yellow][WARNING][/yellow] No API key provided - transcription will not work")
-
-        elif choice == "3":
-            self.config["TRANSCRIPTION_PROVIDER"] = "parakeet"
             self.console.print("[blue][INFO][/blue] Offline Parakeet ASR selected")
             parakeet_url = self.prompt_value("Parakeet ASR URL", "http://host.docker.internal:8767")
+
+            # Write URL to .env for ${PARAKEET_ASR_URL} placeholder in config.yml
             self.config["PARAKEET_ASR_URL"] = parakeet_url
+
+            # Update config.yml to use Parakeet
+            self.config_manager.update_config_defaults({"stt": "stt-parakeet-batch"})
+
+            self.console.print("[green][SUCCESS][/green] Parakeet configured in config.yml and .env")
+            self.console.print("[blue][INFO][/blue] Set defaults.stt: stt-parakeet-batch")
             self.console.print("[yellow][WARNING][/yellow] Remember to start Parakeet service: cd ../../extras/asr-services && docker compose up parakeet")
 
-        elif choice == "4":
+        elif choice == "3":
             self.console.print("[blue][INFO][/blue] Skipping transcription setup")
 
     def setup_llm(self):
-        """Configure LLM provider"""
+        """Configure LLM provider - updates config.yml and .env"""
         self.print_section("LLM Provider Configuration")
-        
+
+        self.console.print("[blue][INFO][/blue] LLM configuration will be saved to config.yml")
+        self.console.print()
+
         choices = {
             "1": "OpenAI (GPT-4, GPT-3.5 - requires API key)",
-            "2": "Ollama (local models - requires Ollama server)",
+            "2": "Ollama (local models - runs locally)",
             "3": "Skip (no memory extraction)"
         }
-        
-        choice = self.prompt_choice("Choose your LLM provider for memory extraction:", choices, "1")
+
+        choice = self.prompt_choice("Which LLM provider will you use?", choices, "1")
 
         if choice == "1":
-            self.config["LLM_PROVIDER"] = "openai"
             self.console.print("[blue][INFO][/blue] OpenAI selected")
             self.console.print("Get your API key from: https://platform.openai.com/api-keys")
 
@@ -227,71 +237,89 @@ class ChronicleSetup:
             else:
                 api_key = self.prompt_value("OpenAI API key (leave empty to skip)", "")
 
-            model = self.prompt_value("OpenAI model", "gpt-5-mini")
-            base_url = self.prompt_value("OpenAI base URL (for proxies/compatible APIs)", "https://api.openai.com/v1")
-
             if api_key:
                 self.config["OPENAI_API_KEY"] = api_key
-                self.config["OPENAI_MODEL"] = model
-                self.config["OPENAI_BASE_URL"] = base_url
-                self.console.print("[green][SUCCESS][/green] OpenAI configured")
+                # Update config.yml to use OpenAI models
+                self.config_manager.update_config_defaults({"llm": "openai-llm", "embedding": "openai-embed"})
+                self.console.print("[green][SUCCESS][/green] OpenAI configured in config.yml")
+                self.console.print("[blue][INFO][/blue] Set defaults.llm: openai-llm")
+                self.console.print("[blue][INFO][/blue] Set defaults.embedding: openai-embed")
             else:
                 self.console.print("[yellow][WARNING][/yellow] No API key provided - memory extraction will not work")
 
         elif choice == "2":
-            self.config["LLM_PROVIDER"] = "ollama"
             self.console.print("[blue][INFO][/blue] Ollama selected")
-            
-            base_url = self.prompt_value("Ollama server URL", "http://host.docker.internal:11434")
-            if not base_url.endswith("/v1"):
-                base_url = base_url.rstrip("/") + "/v1"
-                self.console.print(f"[blue][INFO][/blue] Automatically appending /v1 to Ollama URL: {base_url}")
-
-            model = self.prompt_value("Ollama model", "llama3.2")
-            
-            embedder_model = self.prompt_value("Ollama embedder model", "nomic-embed-text:latest")
-            
-            self.config["OLLAMA_BASE_URL"] = base_url
-            self.config["OLLAMA_MODEL"] = model
-            self.config["OLLAMA_EMBEDDER_MODEL"] = embedder_model
-            self.console.print("[green][SUCCESS][/green] Ollama configured")
-            self.console.print("[yellow][WARNING][/yellow] Make sure Ollama is running and all required models (LLM and embedder) are pulled")
+            # Update config.yml to use Ollama models
+            self.config_manager.update_config_defaults({"llm": "local-llm", "embedding": "local-embed"})
+            self.console.print("[green][SUCCESS][/green] Ollama configured in config.yml")
+            self.console.print("[blue][INFO][/blue] Set defaults.llm: local-llm")
+            self.console.print("[blue][INFO][/blue] Set defaults.embedding: local-embed")
+            self.console.print("[yellow][WARNING][/yellow] Make sure Ollama is running and models are pulled")
 
         elif choice == "3":
             self.console.print("[blue][INFO][/blue] Skipping LLM setup - memory extraction disabled")
+            # Disable memory extraction in config.yml
+            self.config_manager.update_memory_config({"extraction": {"enabled": False}})
 
     def setup_memory(self):
-        """Configure memory provider"""
+        """Configure memory provider - updates config.yml"""
         self.print_section("Memory Storage Configuration")
-        
+
         choices = {
             "1": "Chronicle Native (Qdrant + custom extraction)",
-            "2": "OpenMemory MCP (cross-client compatible, external server)"
+            "2": "OpenMemory MCP (cross-client compatible, external server)",
+            "3": "Mycelia (Timeline-based memory with speaker diarization)"
         }
-        
+
         choice = self.prompt_choice("Choose your memory storage backend:", choices, "1")
 
         if choice == "1":
-            self.config["MEMORY_PROVIDER"] = "chronicle"
             self.console.print("[blue][INFO][/blue] Chronicle Native memory provider selected")
-            
+
             qdrant_url = self.prompt_value("Qdrant URL", "qdrant")
             self.config["QDRANT_BASE_URL"] = qdrant_url
-            self.console.print("[green][SUCCESS][/green] Chronicle memory provider configured")
+
+            # Update config.yml (also updates .env automatically)
+            self.config_manager.update_memory_config({"provider": "chronicle"})
+            self.console.print("[green][SUCCESS][/green] Chronicle memory provider configured in config.yml and .env")
 
         elif choice == "2":
-            self.config["MEMORY_PROVIDER"] = "openmemory_mcp"
             self.console.print("[blue][INFO][/blue] OpenMemory MCP selected")
-            
+
             mcp_url = self.prompt_value("OpenMemory MCP server URL", "http://host.docker.internal:8765")
             client_name = self.prompt_value("OpenMemory client name", "chronicle")
             user_id = self.prompt_value("OpenMemory user ID", "openmemory")
-            
-            self.config["OPENMEMORY_MCP_URL"] = mcp_url
-            self.config["OPENMEMORY_CLIENT_NAME"] = client_name
-            self.config["OPENMEMORY_USER_ID"] = user_id
-            self.console.print("[green][SUCCESS][/green] OpenMemory MCP configured")
+            timeout = self.prompt_value("OpenMemory timeout (seconds)", "30")
+
+            # Update config.yml with OpenMemory MCP settings (also updates .env automatically)
+            self.config_manager.update_memory_config({
+                "provider": "openmemory_mcp",
+                "openmemory_mcp": {
+                    "server_url": mcp_url,
+                    "client_name": client_name,
+                    "user_id": user_id,
+                    "timeout": int(timeout)
+                }
+            })
+            self.console.print("[green][SUCCESS][/green] OpenMemory MCP configured in config.yml and .env")
             self.console.print("[yellow][WARNING][/yellow] Remember to start OpenMemory: cd ../../extras/openmemory-mcp && docker compose up -d")
+
+        elif choice == "3":
+            self.console.print("[blue][INFO][/blue] Mycelia memory provider selected")
+
+            mycelia_url = self.prompt_value("Mycelia API URL", "http://localhost:5173")
+            timeout = self.prompt_value("Mycelia timeout (seconds)", "30")
+
+            # Update config.yml with Mycelia settings (also updates .env automatically)
+            self.config_manager.update_memory_config({
+                "provider": "mycelia",
+                "mycelia": {
+                    "api_url": mycelia_url,
+                    "timeout": int(timeout)
+                }
+            })
+            self.console.print("[green][SUCCESS][/green] Mycelia memory provider configured in config.yml and .env")
+            self.console.print("[yellow][WARNING][/yellow] Make sure Mycelia is running at the configured URL")
 
     def setup_optional_services(self):
         """Configure optional services"""
@@ -314,10 +342,54 @@ class ChronicleSetup:
                 self.console.print("[green][SUCCESS][/green] Speaker Recognition configured")
                 self.console.print("[blue][INFO][/blue] Start with: cd ../../extras/speaker-recognition && docker compose up -d")
         
-        # Check if ASR service URL provided via args  
+        # Check if ASR service URL provided via args
         if hasattr(self.args, 'parakeet_asr_url') and self.args.parakeet_asr_url:
             self.config["PARAKEET_ASR_URL"] = self.args.parakeet_asr_url
             self.console.print(f"[green][SUCCESS][/green] Parakeet ASR configured via args: {self.args.parakeet_asr_url}")
+
+    def setup_obsidian(self):
+        """Configure Obsidian/Neo4j integration"""
+        # Check if enabled via command line
+        if hasattr(self.args, 'enable_obsidian') and self.args.enable_obsidian:
+            enable_obsidian = True
+            neo4j_password = getattr(self.args, 'neo4j_password', None)
+
+            if not neo4j_password:
+                self.console.print("[yellow][WARNING][/yellow] --enable-obsidian provided but no password")
+                neo4j_password = self.prompt_password("Neo4j password (min 8 chars)")
+        else:
+            # Interactive prompt (fallback)
+            self.console.print()
+            self.console.print("[bold cyan]Obsidian/Neo4j Integration[/bold cyan]")
+            self.console.print("Enable graph-based knowledge management for Obsidian vault notes")
+            self.console.print()
+
+            try:
+                enable_obsidian = Confirm.ask("Enable Obsidian/Neo4j integration?", default=False)
+            except EOFError:
+                self.console.print("Using default: No")
+                enable_obsidian = False
+
+            if enable_obsidian:
+                neo4j_password = self.prompt_password("Neo4j password (min 8 chars)")
+
+        if enable_obsidian:
+            # Update .env with credentials only (secrets, not feature flags)
+            self.config["NEO4J_HOST"] = "neo4j-mem0"
+            self.config["NEO4J_USER"] = "neo4j"
+            self.config["NEO4J_PASSWORD"] = neo4j_password
+
+            # Update config.yml with feature flag (source of truth) - auto-saves via ConfigManager
+            self.config_manager.update_memory_config({
+                "obsidian": {
+                    "enabled": True,
+                    "neo4j_host": "neo4j-mem0",
+                    "timeout": 30
+                }
+            })
+
+            self.console.print("[green][SUCCESS][/green] Obsidian/Neo4j configured")
+            self.console.print("[blue][INFO][/blue] Neo4j will start automatically with --profile obsidian")
 
     def setup_network(self):
         """Configure network settings"""
@@ -336,18 +408,26 @@ class ChronicleSetup:
         else:
             # Interactive configuration
             self.print_section("HTTPS Configuration (Optional)")
-            
+
             try:
                 enable_https = Confirm.ask("Enable HTTPS for microphone access?", default=False)
             except EOFError:
                 self.console.print("Using default: No")
                 enable_https = False
-            
+
             if enable_https:
                 self.console.print("[blue][INFO][/blue] HTTPS enables microphone access in browsers")
                 self.console.print("[blue][INFO][/blue] For distributed deployments, use your Tailscale IP (e.g., 100.64.1.2)")
                 self.console.print("[blue][INFO][/blue] For local-only access, use 'localhost'")
-                server_ip = self.prompt_value("Server IP/Domain for SSL certificate (Tailscale IP or localhost)", "localhost")
+
+                # Check for existing SERVER_IP
+                existing_ip = self.read_existing_env_value("SERVER_IP")
+                if existing_ip and existing_ip not in ['localhost', 'your-server-ip-here']:
+                    prompt_text = f"Server IP/Domain for SSL certificate ({existing_ip}) [press Enter to reuse, or enter new]"
+                    server_ip_input = self.prompt_value(prompt_text, "")
+                    server_ip = server_ip_input if server_ip_input else existing_ip
+                else:
+                    server_ip = self.prompt_value("Server IP/Domain for SSL certificate (Tailscale IP or localhost)", "localhost")
         
         if enable_https:
             
@@ -455,11 +535,11 @@ class ChronicleSetup:
 
         self.console.print("[green][SUCCESS][/green] .env file configured successfully with secure permissions")
 
+        # Note: config.yml is automatically saved by ConfigManager when updates are made
+        self.console.print("[blue][INFO][/blue] Configuration saved to config.yml and .env (via ConfigManager)")
+
     def copy_config_templates(self):
         """Copy other configuration files"""
-        if not Path("memory_config.yaml").exists() and Path("memory_config.yaml.template").exists():
-            shutil.copy2("memory_config.yaml.template", "memory_config.yaml")
-            self.console.print("[green][SUCCESS][/green] memory_config.yaml created")
 
         if not Path("diarization_config.json").exists() and Path("diarization_config.json.template").exists():
             shutil.copy2("diarization_config.json.template", "diarization_config.json")
@@ -469,11 +549,37 @@ class ChronicleSetup:
         """Show configuration summary"""
         self.print_section("Configuration Summary")
         self.console.print()
-        
+
         self.console.print(f"✅ Admin Account: {self.config.get('ADMIN_EMAIL', 'Not configured')}")
-        self.console.print(f"✅ Transcription: {self.config.get('TRANSCRIPTION_PROVIDER', 'Not configured')}")
-        self.console.print(f"✅ LLM Provider: {self.config.get('LLM_PROVIDER', 'Not configured')}")
-        self.console.print(f"✅ Memory Provider: {self.config.get('MEMORY_PROVIDER', 'chronicle')}")
+
+        # Get current config from ConfigManager (single source of truth)
+        config_yml = self.config_manager.get_full_config()
+
+        # Show transcription from config.yml
+        stt_default = config_yml.get("defaults", {}).get("stt", "not set")
+        stt_model = next(
+            (m for m in config_yml.get("models", []) if m.get("name") == stt_default),
+            None
+        )
+        stt_provider = stt_model.get("model_provider", "unknown") if stt_model else "not configured"
+        self.console.print(f"✅ Transcription: {stt_provider} ({stt_default}) - config.yml")
+
+        # Show LLM config from config.yml
+        llm_default = config_yml.get("defaults", {}).get("llm", "not set")
+        embedding_default = config_yml.get("defaults", {}).get("embedding", "not set")
+        self.console.print(f"✅ LLM: {llm_default} (config.yml)")
+        self.console.print(f"✅ Embedding: {embedding_default} (config.yml)")
+
+        # Show memory provider from config.yml
+        memory_provider = config_yml.get("memory", {}).get("provider", "chronicle")
+        self.console.print(f"✅ Memory Provider: {memory_provider} (config.yml)")
+
+        # Show Obsidian/Neo4j status (read from config.yml)
+        obsidian_config = config_yml.get("memory", {}).get("obsidian", {})
+        if obsidian_config.get("enabled", False):
+            neo4j_host = obsidian_config.get("neo4j_host", "not set")
+            self.console.print(f"✅ Obsidian/Neo4j: Enabled ({neo4j_host})")
+
         # Auto-determine URLs based on HTTPS configuration
         if self.config.get('HTTPS_ENABLED') == 'true':
             server_ip = self.config.get('SERVER_IP', 'localhost')
@@ -489,9 +595,18 @@ class ChronicleSetup:
         """Show next steps"""
         self.print_section("Next Steps")
         self.console.print()
-        
+
+        # Get current config from ConfigManager (single source of truth)
+        config_yml = self.config_manager.get_full_config()
+
         self.console.print("1. Start the main services:")
-        self.console.print("   [cyan]docker compose up --build -d[/cyan]")
+        # Include --profile obsidian if Obsidian is enabled (read from config.yml)
+        obsidian_enabled = config_yml.get("memory", {}).get("obsidian", {}).get("enabled", False)
+        if obsidian_enabled:
+            self.console.print("   [cyan]docker compose --profile obsidian up --build -d[/cyan]")
+            self.console.print("   [dim](Includes Neo4j for Obsidian integration)[/dim]")
+        else:
+            self.console.print("   [cyan]docker compose up --build -d[/cyan]")
         self.console.print()
         
         # Auto-determine URLs for next steps
@@ -538,6 +653,7 @@ class ChronicleSetup:
             self.setup_llm()
             self.setup_memory()
             self.setup_optional_services()
+            self.setup_obsidian()
             self.setup_network()
             self.setup_https()
 
@@ -552,6 +668,10 @@ class ChronicleSetup:
 
             self.console.print()
             self.console.print("[green][SUCCESS][/green] Setup complete! 🎉")
+            self.console.print()
+            self.console.print("📝 [bold]Configuration files updated:[/bold]")
+            self.console.print(f"  • .env - API keys and environment variables")
+            self.console.print(f"  • ../../config/config.yml - Model and memory provider configuration")
             self.console.print()
             self.console.print("For detailed documentation, see:")
             self.console.print("  • Docs/quickstart.md")
@@ -576,9 +696,13 @@ def main():
                        help="Parakeet ASR service URL (default: prompt user)")
     parser.add_argument("--enable-https", action="store_true",
                        help="Enable HTTPS configuration (default: prompt user)")
-    parser.add_argument("--server-ip", 
+    parser.add_argument("--server-ip",
                        help="Server IP/domain for SSL certificate (default: prompt user)")
-    
+    parser.add_argument("--enable-obsidian", action="store_true",
+                       help="Enable Obsidian/Neo4j integration (default: prompt user)")
+    parser.add_argument("--neo4j-password",
+                       help="Neo4j password (default: prompt user)")
+
     args = parser.parse_args()
     
     setup = ChronicleSetup(args)

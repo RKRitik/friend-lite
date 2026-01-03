@@ -4,10 +4,12 @@ Chronicle Root Setup Orchestrator
 Handles service selection and delegation only - no configuration duplication
 """
 
+import shutil
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+import yaml
 
 from dotenv import get_key
 from rich import print as rprint
@@ -150,7 +152,8 @@ def cleanup_unselected_services(selected_services):
                 env_file.rename(backup_file)
                 console.print(f"🧹 [dim]Backed up {service_name} configuration to {backup_file.name} (service not selected)[/dim]")
 
-def run_service_setup(service_name, selected_services, https_enabled=False, server_ip=None):
+def run_service_setup(service_name, selected_services, https_enabled=False, server_ip=None,
+                     obsidian_enabled=False, neo4j_password=None):
     """Execute individual service setup script"""
     if service_name == 'advanced':
         service = SERVICES['backend'][service_name]
@@ -165,7 +168,11 @@ def run_service_setup(service_name, selected_services, https_enabled=False, serv
         # Add HTTPS configuration
         if https_enabled and server_ip:
             cmd.extend(['--enable-https', '--server-ip', server_ip])
-            
+
+        # Add Obsidian configuration
+        if obsidian_enabled and neo4j_password:
+            cmd.extend(['--enable-obsidian', '--neo4j-password', neo4j_password])
+
     else:
         service = SERVICES['extras'][service_name]
         cmd = service['cmd'].copy()
@@ -308,9 +315,28 @@ def setup_git_hooks():
     except Exception as e:
         console.print(f"⚠️  [yellow]Could not setup git hooks: {e} (optional)[/yellow]")
 
+def setup_config_file():
+    """Setup config/config.yml from template if it doesn't exist"""
+    config_file = Path("config/config.yml")
+    config_template = Path("config/config.yml.template")
+
+    if not config_file.exists():
+        if config_template.exists():
+            # Ensure config/ directory exists
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(config_template, config_file)
+            console.print("✅ [green]Created config/config.yml from template[/green]")
+        else:
+            console.print("⚠️  [yellow]config/config.yml.template not found, skipping config setup[/yellow]")
+    else:
+        console.print("ℹ️  [blue]config/config.yml already exists, keeping existing configuration[/blue]")
+
 def main():
     """Main orchestration logic"""
     console.print("🎉 [bold green]Welcome to Chronicle![/bold green]\n")
+
+    # Setup config file from template
+    setup_config_file()
 
     # Setup git hooks first
     setup_git_hooks()
@@ -336,30 +362,78 @@ def main():
     if needs_https:
         console.print("\n🔒 [bold cyan]HTTPS Configuration[/bold cyan]")
         console.print("HTTPS enables microphone access in browsers and secure connections")
-        
+
         try:
             https_enabled = Confirm.ask("Enable HTTPS for selected services?", default=False)
         except EOFError:
             console.print("Using default: No")
             https_enabled = False
-        
+
         if https_enabled:
             console.print("\n[blue][INFO][/blue] For distributed deployments, use your Tailscale IP")
             console.print("[blue][INFO][/blue] For local-only access, use 'localhost'")
             console.print("Examples: localhost, 100.64.1.2, your-domain.com")
-            
+
+            # Check for existing SERVER_IP
+            backend_env_path = 'backends/advanced/.env'
+            existing_ip = read_env_value(backend_env_path, 'SERVER_IP')
+
+            if existing_ip and existing_ip not in ['localhost', 'your-server-ip-here']:
+                # Show existing IP with option to reuse
+                prompt_text = f"Server IP/Domain for SSL certificates ({existing_ip}) [press Enter to reuse, or enter new]"
+                default_value = existing_ip
+            else:
+                prompt_text = "Server IP/Domain for SSL certificates [localhost]"
+                default_value = "localhost"
+
             while True:
                 try:
-                    server_ip = console.input("Server IP/Domain for SSL certificates [localhost]: ").strip()
+                    server_ip = console.input(f"{prompt_text}: ").strip()
                     if not server_ip:
-                        server_ip = "localhost"
+                        server_ip = default_value
                     break
                 except EOFError:
-                    server_ip = "localhost"
+                    server_ip = default_value
                     break
-            
+
             console.print(f"[green]✅[/green] HTTPS configured for: {server_ip}")
-    
+
+    # Obsidian/Neo4j Integration
+    obsidian_enabled = False
+    neo4j_password = None
+
+    # Check if advanced backend is selected
+    if 'advanced' in selected_services:
+        console.print("\n🗂️ [bold cyan]Obsidian/Neo4j Integration[/bold cyan]")
+        console.print("Enable graph-based knowledge management for Obsidian vault notes")
+        console.print()
+
+        try:
+            obsidian_enabled = Confirm.ask("Enable Obsidian/Neo4j integration?", default=False)
+        except EOFError:
+            console.print("Using default: No")
+            obsidian_enabled = False
+
+        if obsidian_enabled:
+            console.print("[blue][INFO][/blue] Neo4j will be configured for graph-based memory storage")
+            console.print()
+
+            # Prompt for Neo4j password
+            while True:
+                try:
+                    neo4j_password = console.input("Neo4j password (min 8 chars) [default: neo4jpassword]: ").strip()
+                    if not neo4j_password:
+                        neo4j_password = "neo4jpassword"
+                    if len(neo4j_password) >= 8:
+                        break
+                    console.print("[yellow][WARNING][/yellow] Password must be at least 8 characters")
+                except EOFError:
+                    neo4j_password = "neo4jpassword"
+                    console.print(f"Using default password")
+                    break
+
+            console.print("[green]✅[/green] Obsidian/Neo4j integration will be configured")
+
     # Pure Delegation - Run Each Service Setup
     console.print(f"\n📋 [bold]Setting up {len(selected_services)} services...[/bold]")
     
@@ -370,20 +444,47 @@ def main():
     failed_services = []
     
     for service in selected_services:
-        if run_service_setup(service, selected_services, https_enabled, server_ip):
+        if run_service_setup(service, selected_services, https_enabled, server_ip,
+                            obsidian_enabled, neo4j_password):
             success_count += 1
         else:
             failed_services.append(service)
-    
+
+    # Check for Obsidian/Neo4j configuration (read from config.yml)
+    obsidian_enabled = False
+    if 'advanced' in selected_services and 'advanced' not in failed_services:
+        config_yml_path = Path('config/config.yml')
+        if config_yml_path.exists():
+            try:
+                with open(config_yml_path, 'r') as f:
+                    config_data = yaml.safe_load(f)
+                    obsidian_config = config_data.get('memory', {}).get('obsidian', {})
+                    obsidian_enabled = obsidian_config.get('enabled', False)
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not read config.yml: {e}[/yellow]")
+
     # Final Summary
     console.print(f"\n🎊 [bold green]Setup Complete![/bold green]")
     console.print(f"✅ {success_count}/{len(selected_services)} services configured successfully")
-    
+
     if failed_services:
         console.print(f"❌ Failed services: {', '.join(failed_services)}")
+
+    # Inform about Obsidian/Neo4j if configured
+    if obsidian_enabled:
+        console.print(f"\n📚 [bold cyan]Obsidian Integration Detected[/bold cyan]")
+        console.print("   Neo4j will be automatically started with the 'obsidian' profile")
+        console.print("   when you start the backend service.")
     
     # Next Steps
     console.print("\n📖 [bold]Next Steps:[/bold]")
+
+    # Configuration info
+    console.print("")
+    console.print("📝 [bold cyan]Configuration Files Updated:[/bold cyan]")
+    console.print("   • [green].env files[/green] - API keys and service URLs")
+    console.print("   • [green]config.yml[/green] - Model definitions and memory provider settings")
+    console.print("")
 
     # Development Environment Setup
     console.print("1. Setup development environment (git hooks, testing):")

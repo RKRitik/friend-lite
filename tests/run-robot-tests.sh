@@ -35,12 +35,26 @@ if [ ! -f "Makefile" ] || [ ! -d "endpoints" ]; then
     exit 1
 fi
 
+# Set absolute paths for consistent directory references
+TESTS_DIR="$(pwd)"
+BACKEND_DIR="$(cd ../backends/advanced && pwd)"
+
 print_info "Robot Framework Test Runner"
 print_info "============================"
 
 # Configuration
 CLEANUP_CONTAINERS="${CLEANUP_CONTAINERS:-true}"
 OUTPUTDIR="${OUTPUTDIR:-results}"
+
+# Set default CONFIG_FILE if not provided
+# Use test config by default (disables speaker recognition for CI performance)
+# Override: CONFIG_FILE=../config/config.yml ./run-robot-tests.sh
+export CONFIG_FILE="${CONFIG_FILE:-configs/deepgram-openai.yml}"
+
+# Convert CONFIG_FILE to absolute path (Docker Compose resolves relative paths from compose file location)
+if [[ ! "$CONFIG_FILE" = /* ]]; then
+    CONFIG_FILE="$(cd "$(dirname "$CONFIG_FILE")" && pwd)/$(basename "$CONFIG_FILE")"
+fi
 
 # Load environment variables (CI or local)
 if [ -f "setup/.env.test" ] && [ -z "$DEEPGRAM_API_KEY" ]; then
@@ -69,6 +83,7 @@ fi
 
 print_info "DEEPGRAM_API_KEY length: ${#DEEPGRAM_API_KEY}"
 print_info "OPENAI_API_KEY length: ${#OPENAI_API_KEY}"
+print_info "Using config file: $CONFIG_FILE"
 
 # Create test environment file if it doesn't exist
 if [ ! -f "setup/.env.test" ]; then
@@ -96,38 +111,42 @@ EOF
 fi
 
 # Navigate to backend directory for docker compose
-cd ../backends/advanced
+cd "$BACKEND_DIR"
 
 print_info "Starting test infrastructure..."
 
+# Use unique project name to avoid conflicts with development environment
+export COMPOSE_PROJECT_NAME="advanced-backend-test"
+
 # Ensure required config files exist
-if [ ! -f "memory_config.yaml" ] && [ -f "memory_config.yaml.template" ]; then
-    print_info "Creating memory_config.yaml from template..."
-    cp memory_config.yaml.template memory_config.yaml
-fi
+# memory_config.yaml no longer used; memory settings live in config.yml
 
 # Clean up any existing test containers and volumes for fresh start
 print_info "Cleaning up any existing test environment..."
-docker compose -f docker-compose-ci.yml down -v 2>/dev/null || true
+docker compose -f docker-compose-test.yml down -v 2>/dev/null || true
 
-# Force remove any stuck containers with test names
+# Force remove any stuck containers with test names (uses COMPOSE_PROJECT_NAME)
 print_info "Removing any stuck test containers..."
-docker rm -f advanced-mongo-test-1 advanced-redis-test-1 advanced-qdrant-test-1 advanced-friend-backend-test-1 advanced-workers-test-1 advanced-webui-test-1 2>/dev/null || true
+# Dynamically construct container names from docker-compose services
+TEST_SERVICES=(mongo-test redis-test qdrant-test chronicle-backend-test workers-test webui-test speaker-service-test)
+for service in "${TEST_SERVICES[@]}"; do
+    docker rm -f "${COMPOSE_PROJECT_NAME}-${service}-1" 2>/dev/null || true
+done
 
 # Start infrastructure services (MongoDB, Redis, Qdrant)
 print_info "Starting MongoDB, Redis, and Qdrant (fresh containers)..."
-docker compose -f docker-compose-ci.yml up -d --quiet-pull mongo-test redis-test qdrant-test
+docker compose -f docker-compose-test.yml up -d --quiet-pull mongo-test redis-test qdrant-test
 
 # Wait for MongoDB
 print_info "Waiting for MongoDB (up to 60s)..."
 for i in {1..30}; do
-    if docker compose -f docker-compose-ci.yml exec -T mongo-test mongosh --eval "db.adminCommand({ping: 1})" > /dev/null 2>&1; then
+    if docker compose -f docker-compose-test.yml exec -T mongo-test mongosh --eval "db.adminCommand({ping: 1})" > /dev/null 2>&1; then
         print_success "MongoDB is ready"
         break
     fi
     if [ $i -eq 30 ]; then
         print_error "MongoDB failed to start"
-        docker compose -f docker-compose-ci.yml logs mongo-test
+        docker compose -f docker-compose-test.yml logs mongo-test
         exit 1
     fi
     sleep 2
@@ -142,7 +161,7 @@ for i in {1..30}; do
     fi
     if [ $i -eq 30 ]; then
         print_error "Qdrant failed to start"
-        docker compose -f docker-compose-ci.yml logs qdrant-test
+        docker compose -f docker-compose-test.yml logs qdrant-test
         exit 1
     fi
     sleep 2
@@ -150,10 +169,10 @@ done
 
 # Build and start backend
 print_info "Building backend..."
-docker compose -f docker-compose-ci.yml build friend-backend-test
+docker compose -f docker-compose-test.yml build chronicle-backend-test
 
 print_info "Starting backend..."
-docker compose -f docker-compose-ci.yml up -d friend-backend-test
+docker compose -f docker-compose-test.yml up -d chronicle-backend-test
 
 # Wait for backend
 print_info "Waiting for backend (up to 120s)..."
@@ -164,7 +183,7 @@ for i in {1..40}; do
     fi
     if [ $i -eq 40 ]; then
         print_error "Backend failed to start"
-        docker compose -f docker-compose-ci.yml logs friend-backend-test
+        docker compose -f docker-compose-test.yml logs chronicle-backend-test
         exit 1
     fi
     sleep 3
@@ -172,18 +191,18 @@ done
 
 # Start workers
 print_info "Starting RQ workers..."
-docker compose -f docker-compose-ci.yml up -d workers-test
+docker compose -f docker-compose-test.yml up -d workers-test
 
 # Wait for workers container
 print_info "Waiting for workers container (up to 30s)..."
 for i in {1..15}; do
-    if docker compose -f docker-compose-ci.yml ps workers-test | grep -q "Up"; then
+    if docker compose -f docker-compose-test.yml ps workers-test | grep -q "Up"; then
         print_success "Workers container is running"
         break
     fi
     if [ $i -eq 15 ]; then
         print_error "Workers container failed to start"
-        docker compose -f docker-compose-ci.yml logs workers-test
+        docker compose -f docker-compose-test.yml logs workers-test
         exit 1
     fi
     sleep 2
@@ -192,7 +211,7 @@ done
 # Verify workers are registered
 print_info "Waiting for workers to register with Redis (up to 60s)..."
 for i in {1..30}; do
-    WORKER_COUNT=$(docker compose -f docker-compose-ci.yml exec -T workers-test uv run python -c 'from rq import Worker; from redis import Redis; import os; r = Redis.from_url(os.getenv("REDIS_URL", "redis://redis-test:6379/0")); print(len(Worker.all(connection=r)))' 2>/dev/null || echo "0")
+    WORKER_COUNT=$(docker compose -f docker-compose-test.yml exec -T workers-test uv run python -c 'from rq import Worker; from redis import Redis; import os; r = Redis.from_url(os.getenv("REDIS_URL", "redis://redis-test:6379/0")); print(len(Worker.all(connection=r)))' 2>/dev/null || echo "0")
 
     if [ "$WORKER_COUNT" -ge 6 ]; then
         print_success "Found $WORKER_COUNT workers registered"
@@ -201,7 +220,7 @@ for i in {1..30}; do
 
     if [ $i -eq 30 ]; then
         print_error "Workers failed to register after 60s"
-        docker compose -f docker-compose-ci.yml logs --tail=50 workers-test
+        docker compose -f docker-compose-test.yml logs --tail=50 workers-test
         exit 1
     fi
 
@@ -211,16 +230,10 @@ done
 print_success "All services ready!"
 
 # Return to tests directory
-cd ../../tests
-
-# Install Robot Framework dependencies if not in CI
-if [ -z "$CI" ]; then
-    print_info "Installing Robot Framework dependencies..."
-    uv venv --quiet --python 3.12 || true  # May already exist
-    uv pip install --quiet robotframework robotframework-requests python-dotenv websockets
-fi
+cd "$TESTS_DIR"
 
 # Run Robot Framework tests via Makefile
+# Dependencies are handled automatically by 'uv run' in Makefile
 print_info "Running Robot Framework tests..."
 print_info "Output directory: $OUTPUTDIR"
 
@@ -234,13 +247,13 @@ fi
 # Show service logs if tests failed
 if [ $TEST_EXIT_CODE -ne 0 ]; then
     print_info "Showing service logs..."
-    cd ../backends/advanced
+    cd "$BACKEND_DIR"
     echo "=== Backend Logs (last 50 lines) ==="
-    docker compose -f docker-compose-ci.yml logs --tail=50 friend-backend-test
+    docker compose -f docker-compose-test.yml logs --tail=50 chronicle-backend-test
     echo ""
     echo "=== Worker Logs (last 50 lines) ==="
-    docker compose -f docker-compose-ci.yml logs --tail=50 workers-test
-    cd ../../tests
+    docker compose -f docker-compose-test.yml logs --tail=50 workers-test
+    cd "$TESTS_DIR"
 fi
 
 # Display test results summary
@@ -282,16 +295,63 @@ if stats is not None:
 PYTHON_SCRIPT
 fi
 
+# Capture container logs before cleanup (always, for debugging)
+print_info "Capturing container logs for debugging..."
+LOG_DIR="${TESTS_DIR}/${OUTPUTDIR}/container-logs"
+mkdir -p "$LOG_DIR"
+
+cd "$BACKEND_DIR"
+
+# Capture container status
+print_info "Capturing container status..."
+docker compose -f docker-compose-test.yml ps > "$LOG_DIR/container-status.txt" 2>&1 || true
+
+# Capture worker registration status
+print_info "Capturing worker registration status..."
+docker compose -f docker-compose-test.yml exec -T workers-test uv run python -c '
+from rq import Worker
+from redis import Redis
+import os
+
+redis_url = os.getenv("REDIS_URL", "redis://redis-test:6379/0")
+r = Redis.from_url(redis_url)
+workers = Worker.all(connection=r)
+
+print(f"Total workers: {len(workers)}")
+print(f"\nWorker details:")
+for i, worker in enumerate(workers, 1):
+    print(f"  {i}. {worker.name}")
+    print(f"     State: {worker.state}")
+    print(f"     Queues: {[q.name for q in worker.queues]}")
+    print(f"     Current job: {worker.get_current_job()}")
+    print()
+' > "$LOG_DIR/worker-status.txt" 2>&1 || echo "Failed to capture worker status" > "$LOG_DIR/worker-status.txt"
+
+# Capture logs from all services
+print_info "Capturing service logs..."
+SERVICES=(chronicle-backend-test workers-test mongo-test redis-test qdrant-test speaker-service-test)
+for service in "${SERVICES[@]}"; do
+    docker compose -f docker-compose-test.yml logs --tail=200 "$service" > "$LOG_DIR/${service}.log" 2>&1 || true
+done
+
+# Capture container resource usage
+print_info "Capturing container resource usage..."
+docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}" > "$LOG_DIR/container-stats.txt" 2>&1 || true
+
+print_success "Container logs saved to: $LOG_DIR"
+
+cd "$TESTS_DIR"
+
 # Cleanup test containers
 if [ "$CLEANUP_CONTAINERS" = "true" ]; then
     print_info "Cleaning up test containers..."
-    cd ../backends/advanced
-    docker compose -f docker-compose-ci.yml down -v
-    cd ../../tests
+    cd "$BACKEND_DIR"
+    docker compose -f docker-compose-test.yml down -v
+    cd "$TESTS_DIR"
     print_success "Cleanup complete"
 else
     print_warning "Skipping container cleanup (CLEANUP_CONTAINERS=false)"
-    print_info "To cleanup manually: cd backends/advanced && docker compose -f docker-compose-ci.yml down -v"
+    print_info "To cleanup manually: cd $BACKEND_DIR && docker compose -f docker-compose-test.yml down -v"
 fi
 
 if [ $TEST_EXIT_CODE -eq 0 ]; then
