@@ -7,9 +7,15 @@ OpenAI, Ollama, and other OpenAI-compatible APIs.
 
 import asyncio
 import logging
-import os
 from abc import ABC, abstractmethod
-from typing import Dict
+from typing import Any, Dict, Optional
+
+from advanced_omi_backend.model_registry import get_models_registry
+from advanced_omi_backend.openai_factory import create_openai_client
+from advanced_omi_backend.services.memory.config import (
+    load_config_yml as _load_root_config,
+)
+from advanced_omi_backend.services.memory.config import resolve_value as _resolve_value
 
 logger = logging.getLogger(__name__)
 
@@ -51,31 +57,19 @@ class OpenAILLMClient(LLMClient):
         temperature: float = 0.1,
     ):
         super().__init__(model, temperature)
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.base_url = base_url or os.getenv("OPENAI_BASE_URL")
-        self.model = model or os.getenv("OPENAI_MODEL")
+        # Do not read from environment here; values are provided by config.yml
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
         if not self.api_key or not self.base_url or not self.model:
-            raise ValueError("OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL must be set")
+            raise ValueError(f"LLM configuration incomplete: api_key={'set' if self.api_key else 'MISSING'}, base_url={'set' if self.base_url else 'MISSING'}, model={'set' if self.model else 'MISSING'}")
 
         # Initialize OpenAI client with optional Langfuse tracing
         try:
-            # Check if Langfuse is configured
-            langfuse_enabled = (
-                os.getenv("LANGFUSE_PUBLIC_KEY")
-                and os.getenv("LANGFUSE_SECRET_KEY")
-                and os.getenv("LANGFUSE_HOST")
+            self.client = create_openai_client(
+                api_key=self.api_key, base_url=self.base_url, is_async=False
             )
-
-            if langfuse_enabled:
-                # Use Langfuse-wrapped OpenAI for tracing
-                import langfuse.openai as openai
-                self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
-                self.logger.info(f"OpenAI client initialized with Langfuse tracing, base_url: {self.base_url}")
-            else:
-                # Use regular OpenAI client without tracing
-                from openai import OpenAI
-                self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
-                self.logger.info(f"OpenAI client initialized (no tracing), base_url: {self.base_url}")
+            self.logger.info(f"OpenAI client initialized, base_url: {self.base_url}")
         except ImportError:
             self.logger.error("OpenAI library not installed. Install with: pip install openai")
             raise
@@ -89,23 +83,33 @@ class OpenAILLMClient(LLMClient):
         """Generate text completion using OpenAI-compatible API."""
         try:
             model_name = model or self.model
-            temp = temperature or self.temperature
-            
-            # Build completion parameters
+            temp = temperature if temperature is not None else self.temperature
+
             params = {
                 "model": model_name,
                 "messages": [{"role": "user", "content": prompt}],
+                "temperature": temp,
             }
-            
-            # Skip temperature for gpt-4o-mini as it only supports default (1)
-            if not (model_name and "gpt-4o-mini" in model_name):
-                params["temperature"] = temp
-            
+
             response = self.client.chat.completions.create(**params)
             return response.choices[0].message.content.strip()
         except Exception as e:
             self.logger.error(f"Error generating completion: {e}")
             raise
+
+    def chat_with_tools(
+        self, messages: list, tools: list | None = None, model: str | None = None, temperature: float | None = None
+    ):
+        """Chat completion with tool/function calling support. Returns raw response object."""
+        model_name = model or self.model
+        params = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": temperature if temperature is not None else self.temperature,
+        }
+        if tools:
+            params["tools"] = tools
+        return self.client.chat.completions.create(**params)
 
     def health_check(self) -> Dict:
         """Check OpenAI-compatible service health."""
@@ -141,21 +145,26 @@ class OpenAILLMClient(LLMClient):
 
 
 class LLMClientFactory:
-    """Factory for creating LLM clients based on environment configuration."""
+    """Factory for creating LLM clients based on configuration registry."""
 
     @staticmethod
     def create_client() -> LLMClient:
-        """Create an LLM client based on LLM_PROVIDER environment variable."""
-        provider = os.getenv("LLM_PROVIDER", "openai").lower()
-
-        if provider in ["openai", "ollama"]:
-            return OpenAILLMClient(
-                api_key=os.getenv("OPENAI_API_KEY"),
-                base_url=os.getenv("OPENAI_BASE_URL"),
-                model=os.getenv("OPENAI_MODEL"),
-            )
-        else:
-            raise ValueError(f"Unsupported LLM provider: {provider}")
+        """Create an LLM client based on model registry configuration (config.yml)."""
+        registry = get_models_registry()
+        
+        if registry:
+            llm_def = registry.get_default("llm")
+            if llm_def:
+                logger.info(f"Creating LLM client from registry: {llm_def.name} ({llm_def.model_provider})")
+                params = llm_def.model_params or {}
+                return OpenAILLMClient(
+                    api_key=llm_def.api_key,
+                    base_url=llm_def.model_url,
+                    model=llm_def.model_name,
+                    temperature=params.get("temperature", 0.1),
+                )
+        
+        raise ValueError("No default LLM defined in config.yml")
 
     @staticmethod
     def get_supported_providers() -> list:
@@ -183,12 +192,69 @@ def reset_llm_client():
 
 # Async wrapper for blocking LLM operations
 async def async_generate(
-    prompt: str, model: str | None = None, temperature: float | None = None
+    prompt: str,
+    model: str | None = None,
+    temperature: float | None = None,
+    operation: str | None = None,
 ) -> str:
-    """Async wrapper for LLM text generation."""
+    """Async wrapper for LLM text generation.
+
+    When ``operation`` is provided, parameters are resolved from the
+    ``llm_operations`` config section via ``get_llm_operation()``.
+    The resolved config determines model, temperature, max_tokens, etc.
+    Explicit ``model``/``temperature`` kwargs still override the resolved values.
+    """
+    if operation:
+        registry = get_models_registry()
+        if registry:
+            op = registry.get_llm_operation(operation)
+            client = op.get_client(is_async=True)
+            api_params = op.to_api_params()
+            # Allow explicit overrides
+            if temperature is not None:
+                api_params["temperature"] = temperature
+            if model is not None:
+                api_params["model"] = model
+            api_params["messages"] = [{"role": "user", "content": prompt}]
+            response = await client.chat.completions.create(**api_params)
+            return response.choices[0].message.content.strip()
+
+    # Fallback: use singleton client
     client = get_llm_client()
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, client.generate, prompt, model, temperature)
+
+
+async def async_chat_with_tools(
+    messages: list,
+    tools: list | None = None,
+    model: str | None = None,
+    temperature: float | None = None,
+    operation: str | None = None,
+):
+    """Async wrapper for chat completion with tool calling.
+
+    When ``operation`` is provided, parameters are resolved from config.
+    """
+    if operation:
+        registry = get_models_registry()
+        if registry:
+            op = registry.get_llm_operation(operation)
+            client = op.get_client(is_async=True)
+            api_params = op.to_api_params()
+            if temperature is not None:
+                api_params["temperature"] = temperature
+            if model is not None:
+                api_params["model"] = model
+            api_params["messages"] = messages
+            if tools:
+                api_params["tools"] = tools
+            return await client.chat.completions.create(**api_params)
+
+    # Fallback: use singleton client
+    client = get_llm_client()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, client.chat_with_tools, messages, tools, model, temperature)
 
 
 async def async_health_check() -> Dict:

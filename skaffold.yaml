@@ -1,7 +1,7 @@
 apiVersion: skaffold/v4beta13
 kind: Config
 metadata:
-  name: friend-lite
+  name: chronicle
 build:
   tagPolicy:
     dateTime:
@@ -149,7 +149,7 @@ profiles:
               image.repository: "{{.IMAGE_REPO_advanced_backend}}"
               image.tag: "{{.IMAGE_TAG_advanced_backend}}"
               # Override specific Kubernetes-specific values (not in env file)
-              env.MONGODB_URI: "mongodb://mongodb.{{.INFRASTRUCTURE_NAMESPACE}}.svc.cluster.local:27017/friend-lite"
+              env.MONGODB_URI: "mongodb://mongodb.{{.INFRASTRUCTURE_NAMESPACE}}.svc.cluster.local:27017/chronicle"
               env.QDRANT_BASE_URL: "qdrant.{{.INFRASTRUCTURE_NAMESPACE}}.svc.cluster.local"
               env.REDIS_URL: "redis://redis-master.{{.INFRASTRUCTURE_NAMESPACE}}.svc.cluster.local:6379/0"
               persistence.storageClass: "openebs-hostpath"
@@ -184,7 +184,7 @@ profiles:
     build:
 
       artifacts:
-        - image: friend-backend-test
+        - image: chronicle-backend-test
           context: backends/advanced
           docker:
             dockerfile: Dockerfile          
@@ -195,7 +195,7 @@ profiles:
 
     deploy:
       docker:
-        images: [friend-backend-test, webui-test, mongo-test, qdrant-test, redis-test]
+        images: [chronicle-backend-test, webui-test, mongo-test, qdrant-test, redis-test]
           
    
 

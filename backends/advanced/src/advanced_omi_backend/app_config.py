@@ -1,5 +1,5 @@
 """
-Application configuration for Friend-Lite backend.
+Application configuration for Chronicle backend.
 
 Centralizes all application-level configuration including database connections,
 service configurations, and environment variables that were previously in main.py.
@@ -13,7 +13,12 @@ from typing import Optional
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from advanced_omi_backend.constants import OMI_CHANNELS, OMI_SAMPLE_RATE, OMI_SAMPLE_WIDTH
+from advanced_omi_backend.constants import (
+    OMI_CHANNELS,
+    OMI_SAMPLE_RATE,
+    OMI_SAMPLE_WIDTH,
+)
+from advanced_omi_backend.model_registry import get_models_registry
 from advanced_omi_backend.services.transcription import get_transcription_provider
 
 # Load environment variables
@@ -28,8 +33,9 @@ class AppConfig:
     def __init__(self):
         # MongoDB Configuration
         self.mongodb_uri = os.getenv("MONGODB_URI", "mongodb://mongo:27017")
+        self.mongodb_database = os.getenv("MONGODB_DATABASE", "chronicle")
         self.mongo_client = AsyncIOMotorClient(self.mongodb_uri)
-        self.db = self.mongo_client.get_default_database("friend-lite")
+        self.db = self.mongo_client.get_default_database(self.mongodb_database)
         self.users_col = self.db["users"]
         self.speakers_col = self.db["speakers"]
 
@@ -44,18 +50,8 @@ class AppConfig:
             os.getenv("NEW_CONVERSATION_TIMEOUT_MINUTES", "1.5")
         )
 
-        # Audio cropping configuration
-        self.audio_cropping_enabled = os.getenv("AUDIO_CROPPING_ENABLED", "true").lower() == "true"
-        self.min_speech_segment_duration = float(os.getenv("MIN_SPEECH_SEGMENT_DURATION", "1.0"))
-        self.cropping_context_padding = float(os.getenv("CROPPING_CONTEXT_PADDING", "0.1"))
-
-        # Transcription Configuration
-        self.transcription_provider_name = os.getenv("TRANSCRIPTION_PROVIDER")
-        self.deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
-        self.mistral_api_key = os.getenv("MISTRAL_API_KEY")
-
-        # Get configured transcription provider
-        self.transcription_provider = get_transcription_provider(self.transcription_provider_name)
+        # Transcription Configuration (registry-based)
+        self.transcription_provider = get_transcription_provider(None)
         if self.transcription_provider:
             logger.info(
                 f"✅ Using {self.transcription_provider.name} transcription provider ({self.transcription_provider.mode})"
@@ -66,7 +62,10 @@ class AppConfig:
         # External Services Configuration
         self.qdrant_base_url = os.getenv("QDRANT_BASE_URL", "qdrant")
         self.qdrant_port = os.getenv("QDRANT_PORT", "6333")
-        self.memory_provider = os.getenv("MEMORY_PROVIDER", "friend_lite").lower()
+        # Memory provider from registry
+        _reg = get_models_registry()
+        _mem = _reg.memory if _reg else {}
+        self.memory_provider = (_mem.get("provider") or "chronicle").lower()
 
         # Redis Configuration
         self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -83,7 +82,10 @@ class AppConfig:
         self.max_workers = os.cpu_count() or 4
 
         # Memory service configuration
-        self.memory_service_supports_threshold = self.memory_provider == "friend_lite"
+        self.memory_service_supports_threshold = self.memory_provider == "chronicle"
+
+        self.gdrive_credentials_path = "data/gdrive_service_account.json"
+        self.gdrive_scopes = ["https://www.googleapis.com/auth/drive.readonly"]
 
 
 # Global configuration instance

@@ -1,23 +1,23 @@
-# Friend-Lite Initialization System
+# Chronicle Initialization System
 
 ## Quick Links
 
 - **👉 [Start Here: Quick Start Guide](../quickstart.md)** - Main setup path for new users
 - **📚 [Full Documentation](../CLAUDE.md)** - Comprehensive reference  
-- **🏗️ [Architecture Details](features.md)** - Technical deep dive
+- **🏗️ [Architecture Details](overview.md)** - Technical deep dive
 
 ---
 
 ## Overview
 
-Friend-Lite uses a unified initialization system with clean separation of concerns:
+Chronicle uses a unified initialization system with clean separation of concerns:
 
 - **Configuration** (`wizard.py`) - Set up service configurations, API keys, and .env files
 - **Service Management** (`services.py`) - Start, stop, and manage running services
 
 The root orchestrator handles service selection and delegates configuration to individual service scripts. In general, setup scripts only configure and do not start services automatically. Exceptions: `extras/asr-services` and `extras/openmemory-mcp` are startup scripts. This prevents unnecessary resource usage and gives you control over when services actually run.
 
-> **New to Friend-Lite?** Most users should start with the [Quick Start Guide](../quickstart.md) instead of this detailed reference.
+> **New to Chronicle?** Most users should start with the [Quick Start Guide](../quickstart.md) instead of this detailed reference.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ The root orchestrator handles service selection and delegates configuration to i
 
 ### Service Scripts
 - **Backend**: `backends/advanced/init.py` - Complete Python-based interactive setup
-- **Speaker Recognition**: `extras/speaker-recognition/init.sh` - Python-based interactive setup
+- **Speaker Recognition**: `extras/speaker-recognition/init.py` - Python-based interactive setup
 - **ASR Services**: `extras/asr-services/setup.sh` - Service startup script
 - **OpenMemory MCP**: `extras/openmemory-mcp/setup.sh` - External server startup
 
@@ -38,7 +38,10 @@ The root orchestrator handles service selection and delegates configuration to i
 Set up multiple services together with automatic URL coordination:
 
 ```bash
-# From project root
+# From project root (using convenience script)
+./wizard.sh
+
+# Or use direct command:
 uv run --with-requirements setup-requirements.txt python wizard.py
 ```
 
@@ -115,28 +118,65 @@ Note (Linux): If `host.docker.internal` is unavailable, add `extra_hosts: - "hos
 ✅ **Unified Control** - Single command to start/stop all services  
 ✅ **Selective Starting** - Choose which services to run based on your current needs
 
-## Service URLs
+## Ports & Access
 
-### Default Service Endpoints
-- **Backend API**: http://localhost:8000
-- **Backend WebUI**: http://localhost:5173  
-- **Speaker Recognition**: http://localhost:8085
-- **Speaker Recognition WebUI**: http://localhost:5173
-- **Parakeet ASR**: http://localhost:8767
-- **OpenMemory MCP**: http://localhost:8765
+### HTTP Mode (Default - No SSL Required)
+
+| Service | API Port | Web UI Port | Access URL |
+|---------|----------|-------------|------------|
+| **Advanced Backend** | 8000 | 5173 | http://localhost:8000 (API), http://localhost:5173 (Dashboard) |
+| **Speaker Recognition** | 8085 | 5175* | http://localhost:8085 (API), http://localhost:5175 (WebUI) |
+| **Parakeet ASR** | 8767 | - | http://localhost:8767 (API) |
+| **OpenMemory MCP** | 8765 | 8765 | http://localhost:8765 (API + WebUI) |
+
+*Speaker Recognition WebUI port is configurable via REACT_UI_PORT
+
+Note: Browsers require HTTPS for microphone access over network.
+
+### HTTPS Mode (For Microphone Access)
+
+| Service | HTTP Port | HTTPS Port | Access URL |
+|---------|-----------|------------|------------|
+| **Advanced Backend** | 80->443 | 443 | https://localhost/ (Main), https://localhost/api/ (API) |
+| **Speaker Recognition** | 8081->8444 | 8444 | https://localhost:8444/ (Main), https://localhost:8444/api/ (API) |
+
+nginx services start automatically with the standard docker compose command.
+
+See [ssl-certificates.md](ssl-certificates.md) for HTTPS/SSL setup details.
 
 ### Container-to-Container Communication
 Services use `host.docker.internal` for inter-container communication:
 - `http://127.0.0.1:8085` - Speaker Recognition
-- `http://host.docker.internal:8767` - Parakeet ASR  
+- `http://host.docker.internal:8767` - Parakeet ASR
 - `http://host.docker.internal:8765` - OpenMemory MCP
 
 ## Service Management
 
-Friend-Lite now separates **configuration** from **service lifecycle management**:
+Chronicle now separates **configuration** from **service lifecycle management**:
 
 ### Unified Service Management
-Use the `services.py` script for all service operations:
+
+**Convenience Scripts (Recommended):**
+```bash
+# Start all configured services
+./start.sh
+
+# Check service status
+./status.sh
+
+# Restart all services
+./restart.sh
+
+# Stop all services
+./stop.sh
+```
+
+**Note**: Convenience scripts wrap the longer `uv run --with-requirements setup-requirements.txt python` commands for ease of use.
+
+<details>
+<summary>Full commands (click to expand)</summary>
+
+Use the `services.py` script directly for more control:
 
 ```bash
 # Start all configured services
@@ -148,12 +188,25 @@ uv run --with-requirements setup-requirements.txt python services.py start backe
 # Check service status
 uv run --with-requirements setup-requirements.txt python services.py status
 
+# Restart all services
+uv run --with-requirements setup-requirements.txt python services.py restart --all
+
+# Restart specific services
+uv run --with-requirements setup-requirements.txt python services.py restart backend
+
 # Stop all services
 uv run --with-requirements setup-requirements.txt python services.py stop --all
 
-# Stop specific services  
+# Stop specific services
 uv run --with-requirements setup-requirements.txt python services.py stop asr-services openmemory-mcp
 ```
+
+</details>
+
+**Important Notes:**
+- **Restart** restarts containers without rebuilding - use for configuration changes (.env updates)
+- **For code changes**, use `./stop.sh` then `./start.sh` to rebuild images
+- Convenience scripts handle common operations; use direct commands for specific service selection
 
 ### Manual Service Management
 You can also manage services individually:
@@ -210,7 +263,7 @@ curl http://localhost:8767/health
 docker compose logs [service-name]
 
 # Backend logs
-cd backends/advanced && docker compose logs friend-backend
+cd backends/advanced && docker compose logs chronicle-backend
 
 # Speaker Recognition logs
 cd extras/speaker-recognition && docker compose logs speaker-service

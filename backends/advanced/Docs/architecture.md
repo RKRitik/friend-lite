@@ -1,11 +1,11 @@
-# Friend-Lite Backend Architecture
+# Chronicle Backend Architecture
 
 > 📖 **Prerequisite**: Read [quickstart.md](./quickstart.md) first for basic system understanding.
 
 ## System Overview
 
 
-Friend-Lite is a comprehensive real-time conversation processing system that captures audio streams, performs speech-to-text transcription, and extracts memories. The system features a FastAPI backend with WebSocket audio streaming, versioned transcript and memory processing, a React web dashboard with search capabilities, and user authentication with role-based access control.
+Chronicle is a comprehensive real-time conversation processing system that captures audio streams, performs speech-to-text transcription, and extracts memories. The system features a FastAPI backend with WebSocket audio streaming, versioned transcript and memory processing, a React web dashboard with search capabilities, and user authentication with role-based access control.
 
 
 **Core Implementation**: The complete system is implemented in `src/advanced_omi_backend/main.py` with supporting services in dedicated modules, using a modular router/controller architecture pattern.
@@ -22,7 +22,7 @@ graph TB
 
     %% Main WebSocket Server
     subgraph "WebSocket Server"
-        WS["/ws_pcm endpoint"]
+        WS["/ws?codec=pcm endpoint"]
         AUTH[JWT Auth]
     end
 
@@ -237,13 +237,13 @@ Wyoming is a peer-to-peer protocol for voice assistants that combines JSONL (JSO
 
 #### Backend Implementation
 
-**Advanced Backend (`/ws_pcm`)**:
+**Advanced Backend (`/ws?codec=pcm`)**:
 - **Full Wyoming Protocol Support**: Parses all Wyoming events for comprehensive session management
 - **Session State Tracking**: Only processes audio chunks when session is active (after receiving audio-start)
 - **Conversation Boundaries**: Uses Wyoming audio-start/stop events to define precise conversation segments
 - **PCM Audio Processing**: Direct processing of PCM audio data from all apps
 
-**Advanced Backend (`/ws_omi`)**:
+**Advanced Backend (`/ws?codec=opus`)**:
 - **Wyoming Protocol + Opus Decoding**: Combines Wyoming session management with OMI Opus decoding
 - **Continuous Streaming**: OMI devices stream continuously, audio-start/stop events are optional
 - **Timestamp Preservation**: Uses timestamps from Wyoming headers when provided
@@ -585,7 +585,7 @@ stateDiagram-v2
 ```mermaid
 graph LR
     subgraph "Docker Network"
-        Backend[friend-backend<br/>uv + FastAPI]
+        Backend[chronicle-backend<br/>uv + FastAPI]
         WebUI[webui<br/>React Dashboard]
         Proxy[nginx<br/>Load Balancer]
         Mongo[mongo:4.4.18<br/>Primary Database]
@@ -616,7 +616,7 @@ graph LR
 
 ### Container Specifications
 
-#### Backend Container (`friend-backend`)
+#### Backend Container (`chronicle-backend`)
 - **Base**: Python 3.12 slim with uv package manager
 - **Dependencies**: FastAPI, WebSocket libraries, audio processing tools
 - **Volumes**: Audio chunk storage, debug directories
@@ -1006,8 +1006,8 @@ src/advanced_omi_backend/
 - `POST /api/conversations/{conversation_id}/activate-transcript` - Switch transcript version
 - `POST /api/conversations/{conversation_id}/activate-memory` - Switch memory version
 - `POST /api/audio/upload` - Batch audio file upload and processing
-- WebSocket `/ws_omi` - Real-time Opus audio streaming with Wyoming protocol (OMI devices)
-- WebSocket `/ws_pcm` - Real-time PCM audio streaming with Wyoming protocol (all apps)
+- WebSocket `/ws?codec=opus` - Real-time Opus audio streaming with Wyoming protocol (OMI devices)
+- WebSocket `/ws?codec=pcm` - Real-time PCM audio streaming with Wyoming protocol (all apps)
 
 ### Authentication & Authorization
 - **JWT Tokens**: All API endpoints require valid JWT authentication
@@ -1049,7 +1049,7 @@ src/advanced_omi_backend/
   "memory_versions": [
     {
       "version_id": "version_def",
-      "provider": "friend_lite",
+      "provider": "chronicle",
       "created_at": "2025-01-15T10:32:00Z",
       "memory_count": 5
     }

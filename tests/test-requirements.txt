@@ -1,0 +1,9 @@
+robotframework
+robotframework-tidy
+robotframework-requests
+robotframework-browser
+robotframework-databaselibrary
+python-dotenv
+websockets
+pymongo
+ 

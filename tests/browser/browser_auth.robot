@@ -1,7 +1,7 @@
 *** Settings ***
 Documentation    Browser Authentication Tests
 Library          Browser
-Resource         ../resources/setup_resources.robot
+Resource            ../setup/setup_keywords.robot
 Suite Setup      Suite Setup
 
 
@@ -25,7 +25,7 @@ Test Browser Can Access Login Page
     Fill Text    id=password    ${ADMIN_PASSWORD}
     Click   button[type="submit"]
     # Verify that we are logged in by checking for the presence of the dashboard
-    Get Element    text=Friend-Lite Dashboard
+    Get Element    text=Chronicle Dashboard
     Log    Successfully accessed login page and logged in    INFO
 
 

@@ -1,10 +1,10 @@
-# Friend-Lite Quick Start
+# Chronicle Quick Start
 
 ## What You're Building (Complete Beginners Start Here!)
 
 You're setting up your own personal AI that:
 - **Runs on your home computer** - processes audio, stores memories, runs AI models
-- **Connects to your phone** - where you use the Friend-Lite app and OMI device
+- **Connects to your phone** - where you use the Chronicle app and OMI device
 - **Works everywhere** - your phone can access your home AI from anywhere
 
 Think of it like having Siri/Alexa, but it's **your own AI** running on **your hardware** with **your data**.
@@ -13,12 +13,12 @@ Think of it like having Siri/Alexa, but it's **your own AI** running on **your h
 
 ### On Your Home Computer
 - **Docker** - Runs all the AI services (like having multiple apps in containers)
-- **Friend-Lite Backend** - The main AI brain (transcription, memory, processing)
+- **Chronicle Backend** - The main AI brain (transcription, memory, processing)
 - **Tailscale** - Creates secure tunnel so your phone can reach home
 
 ### On Your Phone  
 - **Tailscale** - Connects securely to your home computer
-- **Friend-Lite Mobile App** - Interface for your OMI device and conversations
+- **Chronicle Mobile App** - Interface for your OMI device and conversations
 
 ### AI Services (Choose Your Path)
 
@@ -47,6 +47,10 @@ Think of it like having Siri/Alexa, but it's **your own AI** running on **your h
 - **Windows/Mac**: [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - **Linux**: [Install Docker](https://docs.docker.com/engine/install/)
 - **After install**: Make sure Docker Desktop is running
+
+> **WSL Users**: Chronicle services will fail to start unless Docker
+> is installed and running inside WSL2
+> (or Docker Desktop with **WSL integration enabled**).
 
 **uv** (Python package manager):
 ```bash
@@ -101,20 +105,26 @@ The setup wizard will automatically download and configure:
 
 *Note: First-time setup will download AI models (this can take time and storage space)*
 
-## Step 3: Download and Setup Friend-Lite
+## Step 3: Download and Setup Chronicle
 
 ### On Your Home Computer
 
 **Download the code:**
 ```bash
-git clone https://github.com/AnkushMalaker/friend-lite.git
-cd friend-lite
+git clone https://github.com/chronicle-ai/chronicle.git
+cd chronicle
 ```
 
 **Run the setup wizard:**
 ```bash
+# Using convenience script (recommended)
+./wizard.sh
+
+# Or use direct command:
 uv run --with-requirements setup-requirements.txt python wizard.py
 ```
+
+**Note**: Convenience scripts (`./wizard.sh`, `./start.sh`, `./restart.sh`, `./stop.sh`, `./status.sh`) are wrappers around `wizard.py` and `services.py` that simplify the longer `uv run` commands.
 
 ### What the Setup Wizard Will Ask You
 
@@ -160,6 +170,10 @@ The wizard will ask questions - here's what to answer:
 
 **Start the services:**
 ```bash
+# Option 1: Using convenience script (recommended)
+./start.sh
+
+# Option 2: Direct command
 uv run --with-requirements setup-requirements.txt python services.py start --all --build
 ```
 
@@ -173,26 +187,26 @@ Before connecting your phone, make sure everything works:
    
    *Your browser will warn about "unsafe certificate" - click "Advanced" → "Proceed anyway"*
 
-2. You should see the Friend-Lite dashboard
+2. You should see the Chronicle dashboard
 3. Click "Live Recording" in the sidebar
 4. Test your microphone - record a short clip
 5. Check that it gets transcribed and appears in "Conversations"
 6. **Only proceed to phone setup when this works perfectly!**
 
-## Step 5: Install Friend-Lite on Your Phone
+## Step 5: Install Chronicle on Your Phone
 
 **No development setup needed - just download and install!**
 
 ### Android Users
-1. Go to [GitHub Releases](https://github.com/AnkushMalaker/friend-lite/releases)
-2. Find the latest release and download `friend-lite-android.apk`
+1. Go to [GitHub Releases](https://github.com/AnkushMalaker/chronicle/releases)
+2. Find the latest release and download `chronicle-android.apk`
 3. Install APK on your phone:
    - Enable "Install from unknown sources" in Android settings
    - Tap the downloaded APK file to install
 
 ### iPhone Users  
-1. Go to [GitHub Releases](https://github.com/AnkushMalaker/friend-lite/releases)
-2. Find the latest release and download `friend-lite-ios.ipa` 
+1. Go to [GitHub Releases](https://github.com/AnkushMalaker/chronicle/releases)
+2. Find the latest release and download `chronicle-ios.ipa` 
 3. Install using sideloading tool:
    - **AltStore** (recommended): [altstore.io](https://altstore.io)
    - **Sideloadly**: [sideloadly.io](https://sideloadly.io)
@@ -201,7 +215,7 @@ Before connecting your phone, make sure everything works:
 
 ### Configure the App
 1. **First**: Make sure Tailscale is running on your phone
-2. Open Friend-Lite app
+2. Open Chronicle app
 3. Go to Settings → Backend Configuration
 4. Enter Backend URL: `https://[your-tailscale-ip]` 
    
@@ -216,7 +230,7 @@ Before connecting your phone, make sure everything works:
 ## Step 6: Connect Your OMI Device
 
 1. Turn on your OMI/Friend device (make sure it's charged)
-2. Open Friend-Lite app on your phone
+2. Open Chronicle app on your phone
 3. Go to "Devices" tab → "Add New Device"
 4. Follow Bluetooth pairing instructions
 5. Once connected, start a conversation!
@@ -250,6 +264,16 @@ Before connecting your phone, make sure everything works:
 
 ### Service Issues
 
+**General Service Management:**
+- **Services not responding**: Try restarting with `./restart.sh`
+- **Check service status**: Use `./status.sh`
+- **Stop all services**: Use `./stop.sh`
+
+*Full commands (what the convenience scripts wrap):*
+- Restart: `uv run --with-requirements setup-requirements.txt python services.py restart --all`
+- Status: `uv run --with-requirements setup-requirements.txt python services.py status`
+- Stop: `uv run --with-requirements setup-requirements.txt python services.py stop --all`
+
 **Cloud Services (Deepgram/OpenAI):**
 - **Transcription not working**: Check Deepgram API key is correct
 - **No memories created**: Check OpenAI API key and account has credits
@@ -264,5 +288,5 @@ Before connecting your phone, make sure everything works:
 ## Need Help?
 
 - **Full Documentation**: [CLAUDE.md](CLAUDE.md) - Complete technical reference
-- **Architecture Details**: [Docs/features.md](Docs/features.md) - How everything works  
+- **Architecture Details**: [Docs/overview.md](Docs/overview.md) - How everything works
 - **Advanced Setup**: [Docs/init-system.md](Docs/init-system.md) - Power user options

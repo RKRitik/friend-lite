@@ -16,5 +16,6 @@
 !nginx.conf
 !nginx.conf.template
 !start.sh
-!start-workers.sh
+!start-k8s.sh
+!worker_orchestrator.py
 !Caddyfile

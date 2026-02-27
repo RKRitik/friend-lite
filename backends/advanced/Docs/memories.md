@@ -2,7 +2,7 @@
 
 > 📖 **Prerequisite**: Read [quickstart.md](./quickstart.md) first for system overview.
 
-This document explains how to configure and customize the memory service in the friend-lite backend.
+This document explains how to configure and customize the memory service in the chronicle backend.
 
 **Code References**: 
 - **Main Implementation**: `src/memory/memory_service.py`
@@ -10,7 +10,7 @@ This document explains how to configure and customize the memory service in the 
 - **Repository Layer**: `src/advanced_omi_backend/conversation_repository.py` (clean data access)
 - **Processing Manager**: `src/advanced_omi_backend/processors.py` (MemoryProcessor class)
 - **Conversation Management**: `src/advanced_omi_backend/conversation_manager.py` (lifecycle coordination)
-- **Configuration**: `memory_config.yaml` + `src/memory_config_loader.py`
+- **Configuration**: `config/config.yml` (memory section) + `src/model_registry.py`
 
 ## Overview
 
@@ -65,7 +65,7 @@ OLLAMA_BASE_URL=http://192.168.0.110:11434
 QDRANT_BASE_URL=localhost
 
 # Mem0 Organization Settings (optional)
-MEM0_ORGANIZATION_ID=friend-lite-org
+MEM0_ORGANIZATION_ID=chronicle-org
 MEM0_PROJECT_ID=audio-conversations
 MEM0_APP_ID=omi-backend
 
@@ -98,7 +98,7 @@ MEM0_CONFIG = {
     "vector_store": {
         "provider": "qdrant",
         "config": {
-            "collection_name": "omi_memories",
+            "collection_name": "chronicle_memories",
             "embedding_model_dims": 768,
             "host": QDRANT_BASE_URL,
             "port": 6333,
@@ -180,7 +180,7 @@ OPENAI_MODEL=gpt-5-mini  # Recommended for reliable JSON output
 # OPENAI_MODEL=gpt-3.5-turbo  # Budget option
 ```
 
-Or configure via `memory_config.yaml`:
+Or configure via `config/config.yml` (memory block):
 
 ```yaml
 memory_extraction:
@@ -391,7 +391,7 @@ process_memory.add(
         "timestamp": 1720616655,
         "conversation_context": "audio_transcription",
         "device_type": "audio_recording",
-        "organization_id": "friend-lite-org",
+        "organization_id": "chronicle-org",
         "project_id": "audio-conversations",
         "app_id": "omi-backend"
     }
@@ -499,7 +499,7 @@ This will:
 3. **Search Not Working**
    - Ensure embedding model is available in Ollama
    - Check vector dimensions match between embedder and Qdrant
-   - Verify collection has vectors: `curl http://localhost:6333/collections/omi_memories`
+   - Verify collection has vectors: `curl http://localhost:6333/collections/chronicle_memories`
 
 ### Required Ollama Models
 
@@ -583,7 +583,7 @@ The memory service exposes these endpoints with enhanced search capabilities:
 - **Vector-based**: Uses embeddings for contextual understanding beyond keyword matching
 
 **Memory Count API**: 
-- **Friend-Lite Provider**: Native Qdrant count API provides accurate total counts
+- **Chronicle Provider**: Native Qdrant count API provides accurate total counts
 - **OpenMemory MCP Provider**: Count support varies by OpenMemory implementation
 - **Response Format**: `{"memories": [...], "total_count": 42}` when supported
 

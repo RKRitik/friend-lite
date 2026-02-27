@@ -1,7 +1,7 @@
 # ========================================
-# Friend-Lite Management System
+# Chronicle Management System
 # ========================================
-# Central management interface for Friend-Lite project
+# Central management interface for Chronicle project
 # Handles configuration, deployment, and maintenance tasks
 
 # Load environment variables from .env file
@@ -25,10 +25,11 @@ K8S_SCRIPTS_DIR := $(SCRIPTS_DIR)/k8s
 .DEFAULT_GOAL := menu
 
 menu: ## Show interactive menu (default)
-	@echo "🎯 Friend-Lite Management System"
+	@echo "🎯 Chronicle Management System"
 	@echo "================================"
 	@echo
 	@echo "📋 Quick Actions:"
+	@echo "  setup-dev          🛠️  Setup development environment (git hooks, pre-commit)"
 	@echo "  setup-k8s          🏗️  Complete Kubernetes setup (registry + infrastructure + RBAC)"
 	@echo "  config             📝 Generate all configuration files"
 	@echo "  deploy             🚀 Deploy using configured mode ($(DEPLOYMENT_MODE))"
@@ -67,7 +68,7 @@ menu: ## Show interactive menu (default)
 	@echo "💡 Tip: Run 'make help' for detailed help on any target"
 
 help: ## Show detailed help for all targets
-	@echo "🎯 Friend-Lite Management System - Detailed Help"
+	@echo "🎯 Chronicle Management System - Detailed Help"
 	@echo "================================================"
 	@echo
 	@echo "🏗️  KUBERNETES SETUP:"
@@ -115,12 +116,35 @@ help: ## Show detailed help for all targets
 	@echo "  clean              Clean up generated configuration files"
 
 # ========================================
+# DEVELOPMENT SETUP
+# ========================================
+
+setup-dev: ## Setup development environment (git hooks, pre-commit)
+	@echo "🛠️  Setting up development environment..."
+	@echo ""
+	@echo "📦 Installing pre-commit..."
+	@pip install pre-commit 2>/dev/null || pip3 install pre-commit
+	@echo ""
+	@echo "🔧 Installing git hooks..."
+	@pre-commit install --hook-type pre-push
+	@pre-commit install --hook-type pre-commit
+	@echo ""
+	@echo "✅ Development environment setup complete!"
+	@echo ""
+	@echo "💡 Hooks installed:"
+	@echo "  • Robot Framework tests run before push"
+	@echo "  • Black/isort format Python code on commit"
+	@echo "  • Code quality checks on commit"
+	@echo ""
+	@echo "⚙️  To skip hooks: git push --no-verify / git commit --no-verify"
+
+# ========================================
 # KUBERNETES SETUP
 # ========================================
 
 setup-k8s: ## Initial Kubernetes setup (registry + infrastructure)
 	@echo "🏗️  Starting Kubernetes initial setup..."
-	@echo "This will set up the complete infrastructure for Friend-Lite"
+	@echo "This will set up the complete infrastructure for Chronicle"
 	@echo
 	@echo "📋 Setup includes:"
 	@echo "  • Insecure registry configuration"
@@ -192,10 +216,10 @@ config-k8s: ## Generate Kubernetes configuration files (ConfigMap/Secret only - 
 	@kubectl apply -f k8s-manifests/configmap.yaml -n $(APPLICATION_NAMESPACE) 2>/dev/null || echo "⚠️  ConfigMap not applied (cluster not available?)"
 	@kubectl apply -f k8s-manifests/secrets.yaml -n $(APPLICATION_NAMESPACE) 2>/dev/null || echo "⚠️  Secret not applied (cluster not available?)"
 	@echo "📦 Copying ConfigMap and Secret to speech namespace..."
-	@kubectl get configmap friend-lite-config -n $(APPLICATION_NAMESPACE) -o yaml | \
+	@kubectl get configmap chronicle-config -n $(APPLICATION_NAMESPACE) -o yaml | \
 		sed -e '/namespace:/d' -e '/resourceVersion:/d' -e '/uid:/d' -e '/creationTimestamp:/d' | \
 		kubectl apply -n speech -f - 2>/dev/null || echo "⚠️  ConfigMap not copied to speech namespace"
-	@kubectl get secret friend-lite-secrets -n $(APPLICATION_NAMESPACE) -o yaml | \
+	@kubectl get secret chronicle-secrets -n $(APPLICATION_NAMESPACE) -o yaml | \
 		sed -e '/namespace:/d' -e '/resourceVersion:/d' -e '/uid:/d' -e '/creationTimestamp:/d' | \
 		kubectl apply -n speech -f - 2>/dev/null || echo "⚠️  Secret not copied to speech namespace"
 	@echo "✅ Kubernetes configuration files generated"

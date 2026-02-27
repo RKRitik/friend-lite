@@ -16,6 +16,7 @@ class UserCreate(BaseUserCreate):
     """Schema for creating new users."""
 
     display_name: Optional[str] = None
+    notification_email: Optional[EmailStr] = None
     is_superuser: Optional[bool] = False
 
 
@@ -23,6 +24,7 @@ class UserRead(BaseUser[PydanticObjectId]):
     """Schema for reading user data."""
 
     display_name: Optional[str] = None
+    notification_email: Optional[EmailStr] = None
     registered_clients: dict[str, dict] = Field(default_factory=dict)
     primary_speakers: list[dict] = Field(default_factory=list)
 
@@ -31,23 +33,25 @@ class UserUpdate(BaseUserUpdate):
     """Schema for updating user data."""
 
     display_name: Optional[str] = None
+    notification_email: Optional[EmailStr] = None
     is_superuser: Optional[bool] = None
+
+    def create_update_dict(self):
+        """Create update dictionary for regular user operations."""
+        update_dict = super().create_update_dict()
+        if self.display_name is not None:
+            update_dict["display_name"] = self.display_name
+        if self.notification_email is not None:
+            update_dict["notification_email"] = self.notification_email
+        return update_dict
 
     def create_update_dict_superuser(self):
         """Create update dictionary for superuser operations."""
-        update_dict = {}
-        if self.email is not None:
-            update_dict["email"] = self.email
-        if self.password is not None:
-            update_dict["password"] = self.password
-        if self.is_active is not None:
-            update_dict["is_active"] = self.is_active
-        if self.is_verified is not None:
-            update_dict["is_verified"] = self.is_verified
-        if self.is_superuser is not None:
-            update_dict["is_superuser"] = self.is_superuser
+        update_dict = super().create_update_dict_superuser()
         if self.display_name is not None:
             update_dict["display_name"] = self.display_name
+        if self.notification_email is not None:
+            update_dict["notification_email"] = self.notification_email
         return update_dict
 
 
@@ -61,6 +65,7 @@ class User(BeanieBaseUser, Document):
     )
 
     display_name: Optional[str] = None
+    notification_email: Optional[EmailStr] = None
     # Client tracking for audio devices
     registered_clients: dict[str, dict] = Field(default_factory=dict)
     # Speaker processing filter configuration

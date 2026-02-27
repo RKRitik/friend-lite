@@ -1,230 +1,272 @@
-# Friend-Lite API Tests
+# Chronicle Integration Tests
 
-Comprehensive Robot Framework test suite for the Friend-Lite advanced backend API endpoints.
+## Quick Start
 
-## Test Structure
-
-### Test Files
-- **`auth_tests.robot`** - Authentication and user management tests
-- **`memory_tests.robot`** - Memory management and search tests
-- **`conversation_tests.robot`** - Conversation management and versioning tests
-- **`health_tests.robot`** - Health check and status endpoint tests
-- **`chat_tests.robot`** - Chat service and session management tests
-- **`client_queue_tests.robot`** - Client management and queue monitoring tests
-- **`system_admin_tests.robot`** - System administration and configuration tests
-- **`all_api_tests.robot`** - Master test suite runner
-
-### Resource Files
-- **`resources/auth_keywords.robot`** - Authentication helper keywords
-- **`resources/memory_keywords.robot`** - Memory management keywords
-- **`resources/conversation_keywords.robot`** - Conversation management keywords
-- **`resources/chat_keywords.robot`** - Chat service keywords
-- **`resources/setup_resources.robot`** - Basic setup and health check keywords
-- **`resources/login_resources.robot`** - Login-specific utilities
-
-### Configuration
-- **`test_env.py`** - Environment configuration and test data
-- **`.env`** - Environment variables (create from template)
-
-## Running Tests
-
-### Prerequisites
-1. Friend-Lite backend running at `http://localhost:8001` (or set `API_URL` in `.env`)
-2. Admin user credentials configured in `.env`
-3. Robot Framework and RequestsLibrary installed
-
-### Environment Setup
+Start containers and run tests:
 ```bash
-# Copy environment template
-cp .env.template .env
-
-# Edit .env with your configuration
-API_URL=http://localhost:8001
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your-secure-admin-password
+cd tests
+make test           # Start containers + run all tests (excludes slow/sdk)
 ```
 
-### Running Individual Test Suites
+Or step by step:
 ```bash
-# Authentication and user tests
-robot auth_tests.robot
-
-# Memory management tests
-robot memory_tests.robot
-
-# Conversation management tests
-robot conversation_tests.robot
-
-# Health and status tests
-robot health_tests.robot
-
-# Chat service tests
-robot chat_tests.robot
-
-# Client and queue tests
-robot client_queue_tests.robot
-
-# System administration tests
-robot system_admin_tests.robot
+make start          # Start test containers
+make test-all       # Run all tests (excludes slow/sdk)
+make stop           # Stop containers
 ```
 
-### Running All Tests
-```bash
-# Run complete test suite
-robot *.robot
+**Note**: Default test runs exclude `slow` tests (backend restarts, long timeouts) and `sdk` tests (unreleased SDK features) for faster feedback. Run these explicitly with `make test-slow` or `make test-sdk` when needed.
 
-# Run with specific tags
-robot --include auth *.robot
-robot --include positive *.robot
-robot --include admin *.robot
+## Test Suites
+
+Run specific test suites:
+
+```bash
+make test-endpoints     # API endpoint tests (~40 tests, fast)
+make test-integration   # End-to-end workflows (~15 tests, slower)
+make test-infra         # Infrastructure resilience tests (~5 tests)
 ```
 
-### Test Output
+### Special Test Categories
+
+**Slow Tests** (excluded by default for faster feedback):
 ```bash
-# Custom output directory
-robot --outputdir results *.robot
+make test-slow    # Run ONLY slow tests (backend restarts, long timeouts)
+```
+- Backend restart tests (service stop/start cycles)
+- Connection resilience tests
+- Tests requiring >30s timeouts
+- Excluded from default `make test` runs
 
-# Verbose logging
-robot --loglevel DEBUG *.robot
+**SDK Tests** (excluded until SDK is released):
+```bash
+make test-sdk     # Run ONLY SDK tests (unreleased features)
+```
+- SDK client library tests
+- SDK authentication tests
+- SDK upload/retrieval tests
+- Excluded from default `make test` runs until SDK is published
 
-# Parallel execution
-pabot --processes 4 *.robot
+**All Tests Including Excluded**:
+```bash
+make test-all-with-slow-and-sdk    # Run everything including slow and SDK tests
 ```
 
-## Test Coverage
+## Container Management
 
-### Authentication & Users (`/api/users`, `/auth`)
-- ✅ Login with valid/invalid credentials
-- ✅ Get current user information
-- ✅ Create/update/delete users (admin only)
-- ✅ User authorization and access control
-- ✅ Admin privilege enforcement
+All container operations are available through simple Makefile targets:
 
-### Memory Management (`/api/memories`)
-- ✅ Get user memories with pagination
-- ✅ Search memories with similarity thresholds
-- ✅ Get memories with transcripts
-- ✅ Delete specific memories
-- ✅ Admin memory access across users
-- ✅ Unfiltered memory access for debugging
+| Command | What it does |
+|---------|--------------|
+| `make start` | Start test containers (or reuse if healthy) |
+| `make stop` | Stop containers (saves logs automatically) |
+| `make restart` | Restart containers (keep same images) |
+| `make rebuild` | Rebuild images and restart (for code changes) |
+| `make containers-clean` | **Saves logs** → stops → removes everything |
+| `make status` | Show container health and ports |
+| `make logs SERVICE=<name>` | View logs for specific service |
 
-### Conversation Management (`/api/conversations`)
-- ✅ List and retrieve conversations
-- ✅ Conversation version history
-- ✅ Transcript reprocessing
-- ✅ Memory reprocessing with version selection
-- ✅ Version activation (transcript/memory)
-- ✅ Conversation deletion and cleanup
-- ✅ User data isolation
+**Important:** Containers are NEVER removed without saving logs first!
 
-### Health & Status (`/health`, `/readiness`)
-- ✅ Main health check with service details
-- ✅ Readiness check for orchestration
-- ✅ Authentication service health
-- ✅ Queue system health status
-- ✅ Chat service health check
-- ✅ System metrics (admin only)
+Logs are automatically saved to: `tests/logs/YYYY-MM-DD_HH-MM-SS/`
 
-### Chat Service (`/api/chat`)
-- ✅ Session creation and management
-- ✅ Session title updates
-- ✅ Message retrieval
-- ✅ Chat statistics
-- ✅ Memory extraction from sessions
-- ✅ Session deletion and cleanup
+### Available Services for Logs
 
-### Client & Queue Management
-- ✅ Active client monitoring
-- ✅ Queue job listing with pagination
-- ✅ Queue statistics and health
-- ✅ User job isolation
-- ✅ Processing task monitoring (admin only)
+```bash
+make logs SERVICE=chronicle-backend-test   # Main backend service
+make logs SERVICE=workers-test              # RQ workers
+make logs SERVICE=mongo-test                # MongoDB
+make logs SERVICE=redis-test                # Redis
+make logs SERVICE=qdrant-test               # Vector database
+make logs SERVICE=speaker-service-test      # Speaker recognition
+```
 
-### System Administration
-- ✅ Authentication configuration
-- ✅ Diarization settings management
-- ✅ Speaker configuration
-- ✅ Memory configuration (YAML)
-- ✅ Configuration validation and reload
-- ✅ Bulk memory deletion
+## Test Workflows
 
-## Test Categories
+### Full Test Run (Clean Slate)
+```bash
+make containers-clean   # Clean previous state (saves logs)
+make test               # Start fresh + run all tests
+```
 
-### By Access Level
-- **Public**: Health checks, auth config
-- **User**: Memories, conversations, chat sessions
-- **Admin**: User management, system config, metrics
+### Quick Iteration (Reuse Containers)
+```bash
+make start              # Start containers once
+make test-quick         # Run tests (fast, no container startup)
+make test-quick         # Run again (even faster)
+```
 
-### By Test Type
-- **Positive**: Valid operations and expected responses
-- **Negative**: Invalid inputs, unauthorized access
-- **Security**: Authentication, authorization, data isolation
-- **Integration**: Cross-service functionality
+### Code Changes (Rebuild Required)
+```bash
+# After modifying Python code
+make rebuild            # Rebuild images with latest code
+make test-quick         # Run tests on new build
+```
 
-### By Component
-- **Auth**: Authentication and authorization
-- **Memory**: Memory storage and retrieval
-- **Conversation**: Audio processing and transcription
-- **Chat**: Interactive chat functionality
-- **System**: Configuration and administration
+## Test Environment
 
-## Key Features Tested
+Test services run on separate ports from production to avoid conflicts:
 
-### Security
-- JWT token authentication
-- Role-based access control (admin vs user)
-- Data isolation between users
-- Unauthorized access prevention
+| Service | Test Port | Production Port |
+|---------|-----------|-----------------|
+| Backend API | `8001` | `8000` |
+| MongoDB | `27018` | `27017` |
+| Redis | `6380` | `6379` |
+| Qdrant HTTP | `6337` | `6333` |
+| Qdrant gRPC | `6338` | `6334` |
 
-### Data Management
-- CRUD operations for all entities
-- Pagination and filtering
-- Search functionality with thresholds
-- Versioning and history tracking
+**Test Database:** Uses `test_db` database (isolated from production)
 
-### System Integration
-- Service health monitoring
-- Configuration management
-- Queue system monitoring
-- Cross-service communication
-
-### Error Handling
-- Invalid input validation
-- Non-existent resource handling
-- Permission denied scenarios
-- Service unavailability graceful degradation
-
-## Maintenance
-
-### Adding New Tests
-1. Create test file or add to existing suite
-2. Use appropriate resource keywords
-3. Follow naming conventions (`Test Name Test`)
-4. Include proper tags and documentation
-5. Add cleanup in teardown if needed
-
-### Updating Keywords
-1. Modify resource files for reusable functionality
-2. Keep keywords focused and single-purpose
-3. Use proper argument handling
-4. Include documentation strings
-
-### Environment Variables
-Update `test_env.py` when adding new configuration options or test data.
+**Test Credentials:**
+- Admin Email: `test-admin@example.com`
+- Admin Password: `test-admin-password-123`
+- JWT Secret: `test-jwt-signing-key-for-integration-tests`
 
 ## Troubleshooting
 
-### Common Issues
-- **401 Unauthorized**: Check admin credentials in `.env`
-- **Connection Refused**: Ensure backend is running
-- **Test Failures**: Check service health endpoints first
-- **Timeout Errors**: Increase timeouts in test configuration
-
-### Debug Mode
+### Port Conflicts
 ```bash
-# Run with detailed logging
-robot --loglevel TRACE auth_tests.robot
-
-# Stop on first failure
-robot --exitonfailure *.robot
+make status         # See what's running
+make stop           # Stop test containers
 ```
+
+If ports are still in use by other services:
+```bash
+lsof -i :8001       # Find what's using port 8001
+# Kill the process or stop the conflicting service
+```
+
+### Test Failures
+```bash
+# View backend logs
+make logs SERVICE=chronicle-backend-test
+
+# View worker logs
+make logs SERVICE=workers-test
+
+# Check container health
+make status
+```
+
+### Clean Slate
+```bash
+make containers-clean    # Saves logs + full cleanup
+make start               # Fresh start
+```
+
+### Container Issues
+
+**Containers won't start:**
+```bash
+make status                  # Check current state
+make containers-clean        # Full cleanup (saves logs)
+make start                   # Start fresh
+```
+
+**Health checks failing:**
+```bash
+make logs SERVICE=chronicle-backend-test   # Check backend logs
+# Common issues: MongoDB not ready, Redis connection failed
+```
+
+**Tests hang or timeout:**
+```bash
+# Check if services are healthy
+make status
+
+# View logs for stuck service
+make logs SERVICE=workers-test
+```
+
+## Log Preservation
+
+**All cleanup operations preserve logs automatically!**
+
+When you run `make containers-clean` or `make clean-all`:
+
+1. **Step 1:** Logs are saved to `tests/logs/YYYY-MM-DD_HH-MM-SS/`
+2. **Step 2:** Containers are stopped and removed
+3. **Step 3:** Volumes are removed
+
+Each log directory contains:
+- Service logs for all containers
+- Container status snapshot
+- Container resource usage stats
+- Test results (if available)
+
+**View saved logs:**
+```bash
+ls -lh tests/logs/                          # List all log archives
+cat tests/logs/2026-01-17_14-30-45/chronicle-backend-test.log
+```
+
+## API Key Separation
+
+Chronicle tests are separated into two execution paths:
+
+### 1. No API Keys Required (~70% of tests)
+These tests run without external API dependencies:
+- Endpoint tests (CRUD operations, permissions)
+- Infrastructure tests (workers, queues, health checks)
+- Basic integration tests
+
+**Configuration:** Uses `configs/mock-services.yml` (no transcription/LLM)
+
+### 2. API Keys Required (~30% of tests)
+These tests require external services:
+- Full E2E tests with transcription (Deepgram)
+- Memory extraction tests (OpenAI)
+- Transcript quality verification
+
+**Configuration:** Uses `configs/deepgram-openai.yml`
+
+**Setup:**
+```bash
+# Copy template
+cp setup/.env.test.template setup/.env.test
+
+# Add API keys
+DEEPGRAM_API_KEY=your-key-here
+OPENAI_API_KEY=your-key-here
+```
+
+## Development Tips
+
+**Faster iteration:**
+1. Start containers once: `make start`
+2. Run specific test suite: `make test-endpoints`
+3. Keep containers running between test runs
+4. Only rebuild when code changes: `make rebuild`
+
+**Debugging specific tests:**
+```bash
+# Run Robot Framework directly for a single test file
+cd tests
+uv run --with-requirements test-requirements.txt robot \
+    --outputdir results \
+    --test "Specific Test Name" \
+    endpoints/test_user.robot
+```
+
+**Clean iteration cycle:**
+```bash
+# 1. Make code changes
+# 2. Rebuild containers
+make rebuild
+
+# 3. Run specific test suite
+make test-endpoints
+
+# 4. View logs if needed
+make logs SERVICE=chronicle-backend-test
+
+# 5. Repeat
+```
+
+---
+
+**Technical Details:** Tests use Robot Framework for end-to-end validation, but you don't need to know Robot Framework to run tests. Just use the Makefile commands above.
+
+**For Robot Framework test development guidelines**, see:
+- `TESTING_GUIDELINES.md` - Comprehensive testing patterns and standards
+- `tags.md` - Approved test tags and usage

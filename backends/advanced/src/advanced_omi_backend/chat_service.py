@@ -1,5 +1,5 @@
 """
-Chat service implementation for Friend-Lite with memory integration.
+Chat service implementation for Chronicle with memory integration.
 
 This module provides:
 - Chat session management with MongoDB persistence
@@ -22,13 +22,18 @@ from motor.motor_asyncio import AsyncIOMotorCollection
 
 from advanced_omi_backend.database import get_database
 from advanced_omi_backend.llm_client import get_llm_client
-from advanced_omi_backend.memory import get_memory_service
+from advanced_omi_backend.model_registry import get_models_registry
+from advanced_omi_backend.services.memory import get_memory_service
+from advanced_omi_backend.services.memory.base import MemoryEntry
+from advanced_omi_backend.services.obsidian_service import (
+    ObsidianSearchError,
+    get_obsidian_service,
+)
 from advanced_omi_backend.users import User
 
 logger = logging.getLogger(__name__)
 
-# Configuration from environment variables
-CHAT_TEMPERATURE = float(os.getenv("CHAT_TEMPERATURE", "0.7"))
+# Configuration
 MAX_MEMORY_CONTEXT = 5  # Maximum number of memories to include in context
 MAX_CONVERSATION_HISTORY = 10  # Maximum conversation turns to keep in context
 
@@ -129,7 +134,7 @@ class ChatSession:
 
 class ChatService:
     """Service for managing chat sessions and memory-enhanced conversations."""
-    
+
     def __init__(self):
         self.db = None
         self.sessions_collection: Optional[AsyncIOMotorCollection] = None
@@ -137,6 +142,44 @@ class ChatService:
         self.llm_client = None
         self.memory_service = None
         self._initialized = False
+
+    async def _get_system_prompt(self) -> str:
+        """
+        Get system prompt from config with fallback to prompt registry default.
+
+        Returns:
+            str: System prompt for chat interactions
+        """
+        try:
+            reg = get_models_registry()
+            if reg and hasattr(reg, 'chat'):
+                chat_config = reg.chat
+                prompt = chat_config.get('system_prompt')
+                if prompt:
+                    logger.info(f"✅ Loaded chat system prompt from config (length: {len(prompt)} chars)")
+                    logger.debug(f"System prompt: {prompt[:100]}...")
+                    return prompt
+        except Exception as e:
+            logger.warning(f"Failed to load chat system prompt from config: {e}")
+
+        # Fallback to prompt registry
+        try:
+            from advanced_omi_backend.prompt_registry import get_prompt_registry
+
+            registry = get_prompt_registry()
+            prompt = await registry.get_prompt("chat.system")
+            logger.info("Using chat system prompt from prompt registry")
+            return prompt
+        except Exception as e:
+            logger.warning(f"Failed to load chat system prompt from registry: {e}")
+
+        # Final fallback
+        logger.info("Using hardcoded default chat system prompt")
+        return """You are a helpful AI assistant with access to the user's personal memories and conversation history.
+
+Use the provided memories and conversation context to give personalized, contextual responses. If memories are relevant, reference them naturally in your response. Be conversational and helpful.
+
+If no relevant memories are available, respond normally based on the conversation context."""
 
     async def initialize(self):
         """Initialize the chat service with database connections."""
@@ -280,7 +323,7 @@ class ChatService:
             logger.error(f"Failed to add message to session {message.session_id}: {e}")
             return False
 
-    async def get_relevant_memories(self, query: str, user_id: str) -> List[Dict]:
+    async def get_relevant_memories(self, query: str, user_id: str) -> List[MemoryEntry]:
         """Get relevant memories for the user's query."""
         try:
             memories = await self.memory_service.search_memories(
@@ -295,7 +338,7 @@ class ChatService:
             return []
 
     async def format_conversation_context(
-        self, session_id: str, user_id: str, current_message: str
+        self, session_id: str, user_id: str, current_message: str, include_obsidian_memory: bool = False
     ) -> Tuple[str, List[str]]:
         """Format conversation context with memory integration."""
         # Get recent conversation history
@@ -303,7 +346,7 @@ class ChatService:
         
         # Get relevant memories
         memories = await self.get_relevant_memories(current_message, user_id)
-        memory_ids = [memory.get("id", "") for memory in memories if memory.get("id")]
+        memory_ids = [memory.id for memory in memories if memory.id]
 
         # Build context string
         context_parts = []
@@ -312,10 +355,33 @@ class ChatService:
         if memories:
             context_parts.append("# Relevant Personal Memories:")
             for i, memory in enumerate(memories, 1):
-                memory_text = memory.get("memory", memory.get("text", ""))
+                memory_text = memory.content
                 if memory_text:
                     context_parts.append(f"{i}. {memory_text}")
             context_parts.append("")
+
+        # Add Obsidian context if requested
+        if include_obsidian_memory:
+            try:
+                obsidian_service = get_obsidian_service()
+                obsidian_result = await obsidian_service.search_obsidian(current_message)
+                obsidian_context = obsidian_result["results"]
+                if obsidian_context:
+                    context_parts.append("# Relevant Obsidian Notes:")
+                    for entry in obsidian_context:
+                        context_parts.append(entry)
+                    context_parts.append("")
+                    logger.info(f"Added {len(obsidian_context)} Obsidian notes to context")
+            except ObsidianSearchError as exc:
+                logger.error(
+                    "Failed to get Obsidian context (%s stage): %s",
+                    exc.stage,
+                    exc,
+                )
+                raise
+            except Exception as e:
+                logger.error(f"Failed to get Obsidian context: {e}")
+                raise e
 
         # Add conversation history
         if messages:
@@ -333,7 +399,7 @@ class ChatService:
         return context, memory_ids
 
     async def generate_response_stream(
-        self, session_id: str, user_id: str, message_content: str
+        self, session_id: str, user_id: str, message_content: str, include_obsidian_memory: bool = False
     ) -> AsyncGenerator[Dict, None]:
         """Generate streaming response with memory context."""
         if not self._initialized:
@@ -352,7 +418,7 @@ class ChatService:
 
             # Format context with memories
             context, memory_ids = await self.format_conversation_context(
-                session_id, user_id, message_content
+                session_id, user_id, message_content, include_obsidian_memory=include_obsidian_memory
             )
 
             # Send memory context used
@@ -365,12 +431,8 @@ class ChatService:
                 "timestamp": time.time()
             }
 
-            # Create system prompt
-            system_prompt = """You are a helpful AI assistant with access to the user's personal memories and conversation history. 
-
-Use the provided memories and conversation context to give personalized, contextual responses. If memories are relevant, reference them naturally in your response. Be conversational and helpful.
-
-If no relevant memories are available, respond normally based on the conversation context."""
+            # Get system prompt from config
+            system_prompt = await self._get_system_prompt()
 
             # Prepare full prompt
             full_prompt = f"{system_prompt}\n\n{context}"
@@ -378,11 +440,18 @@ If no relevant memories are available, respond normally based on the conversatio
             # Generate streaming response
             logger.info(f"Generating response for session {session_id} with {len(memory_ids)} memories")
             
+            # Resolve chat operation temperature from config
+            chat_temp = None
+            registry = get_models_registry()
+            if registry:
+                chat_op = registry.get_llm_operation("chat")
+                chat_temp = chat_op.temperature
+
             # Note: For now, we'll use the regular generate method
             # In the future, this should be replaced with actual streaming
             response_content = self.llm_client.generate(
                 prompt=full_prompt,
-                temperature=CHAT_TEMPERATURE
+                temperature=chat_temp,
             )
 
             # Simulate streaming by yielding chunks

@@ -6,31 +6,34 @@ Library          Process
 Library          String
 Library          DateTime
 Library          OperatingSystem
-Resource         ../resources/setup_resources.robot
-Resource         ../resources/session_resources.robot
+Resource         ../setup/setup_keywords.robot
+Resource         ../setup/teardown_keywords.robot
+Resource         ../resources/session_keywords.robot
 Resource         ../resources/audio_keywords.robot
 Resource         ../resources/conversation_keywords.robot
-Variables        ../test_env.py
-Variables        ../test_data.py
+Resource         ../resources/memory_keywords.robot
+Resource         ../resources/queue_keywords.robot
+Variables        ../setup/test_env.py
+Variables        ../setup/test_data.py
 Suite Setup      Suite Setup
-Suite Teardown   Delete All Sessions
+Suite Teardown   Suite Teardown
 Test Setup       Clear Test Databases
 
 
 *** Test Cases ***
 Full Pipeline Integration Test
-    [Documentation]    Complete end-to-end test of audio processing pipeline
-    [Tags]             integration    pipeline    e2e
+    [Documentation]    Complete end-to-end test of audio started pipeline
+    [Tags]    e2e	requires-api-keys
     [Timeout]          600s
 
     Log    Starting Full Pipeline Integration Test    INFO
 
    
     # Phase 4: Audio Processing - Upload and wait for conversation completion
-    Log    Starting audio upload and processing    INFO
+    Log    Starting audio upload and started    INFO
     ${conversation}=    Upload Audio File    ${TEST_AUDIO_FILE}    ${TEST_DEVICE_NAME}
 
-    Log    Audio processing completed, conversation created    INFO
+    Log    Audio started finished, conversation created    INFO
     Set Global Variable    ${TEST_CONVERSATION}    ${conversation}
 
     # Phase 5: Transcription Verification
@@ -43,6 +46,111 @@ Full Pipeline Integration Test
     Verify Chat Integration    api    ${TEST_CONVERSATION}
 
     Log    Full Pipeline Integration Test Completed Successfully    INFO
+
+Audio Playback And Segment Timing Test
+    [Documentation]    Verify audio files are accessible and segment timestamps are valid
+    [Tags]    e2e	audio-upload
+    [Timeout]          180s
+
+    Log    Starting Audio Playback And Segment Timing Test    INFO
+
+    # Upload audio to create a conversation with segments
+    ${conversation}=    Upload Audio File    ${TEST_AUDIO_FILE}    ${TEST_DEVICE_NAME}
+    ${conversation_id}=    Set Variable    ${conversation}[conversation_id]
+
+    Log    Conversation created: ${conversation_id}    INFO
+
+    # Wait for post-started jobs to complete
+    Sleep    10s    Wait for post-started jobs
+
+    # Refresh conversation data
+    ${conversation}=    Get Conversation By ID    ${conversation_id}
+
+    # Verify original audio is accessible
+    ${audio_response}=    GET On Session    api    /api/audio/get_audio/${conversation_id}    expected_status=200
+    Should Be Equal As Strings    ${audio_response.headers}[content-type]    audio/wav
+    ${original_audio_size}=    Get Length    ${audio_response.content}
+    Should Be True    ${original_audio_size} > 1000    Original audio file too small: ${original_audio_size} bytes
+    Log    Original audio accessible: ${original_audio_size} bytes    INFO
+
+    # Verify segments exist and have valid timestamps
+    Dictionary Should Contain Key    ${conversation}    segments
+    ${segments}=    Set Variable    ${conversation}[segments]
+    ${segment_count}=    Get Length    ${segments}
+    Should Be True    ${segment_count} > 0    No segments found in conversation
+
+    Log    Found ${segment_count} segments    INFO
+
+    # Verify segment timestamp integrity
+    ${prev_end}=    Set Variable    ${0}
+    FOR    ${index}    ${segment}    IN ENUMERATE    @{segments}
+        # Each segment should have start and end times
+        Dictionary Should Contain Key    ${segment}    start
+        Dictionary Should Contain Key    ${segment}    end
+
+        ${start}=    Set Variable    ${segment}[start]
+        ${end}=    Set Variable    ${segment}[end]
+
+        # Start should be non-negative
+        Should Be True    ${start} >= 0    Segment ${index} has negative start time: ${start}
+
+        # End should be greater than start
+        Should Be True    ${end} > ${start}    Segment ${index} end (${end}) not greater than start (${start})
+
+        # Segments should be in order (start >= previous end, allowing small gaps)
+        Should Be True    ${start} >= ${prev_end} - 0.1    Segment ${index} overlaps with previous segment
+
+        ${prev_end}=    Set Variable    ${end}
+
+        Log    Segment ${index}: ${start}s - ${end}s    DEBUG
+    END
+
+    # Verify last segment end time is reasonable (not beyond audio duration)
+    # For a 4-minute audio, segments should end before ~250 seconds
+    ${last_segment}=    Set Variable    ${segments}[-1]
+    ${last_end}=    Set Variable    ${last_segment}[end]
+    Should Be True    ${last_end} < 300    Last segment end time (${last_end}s) exceeds expected audio duration
+
+    Log    All ${segment_count} segments have valid timestamps (0s - ${last_end}s)    INFO
+    Log    Audio Playback And Segment Timing Test Completed Successfully    INFO
+
+End To End Pipeline With Memory Validation Test
+    [Documentation]    Complete E2E test with memory extraction and OpenAI quality validation.
+    ...                Provides comprehensive integration testing of the entire audio started pipeline.
+    ...                Separate from other tests to avoid breaking existing upload-only tests.
+    [Tags]    e2e	memory	requires-api-keys
+    [Timeout]    600s
+
+    Log    Starting End-to-End Pipeline Test with Memory Validation    INFO
+
+    # Phase 1: Upload audio and wait for complete started
+    Log    Uploading audio file and waiting for full started    INFO
+    ${conversation}    ${memories}=    Upload Audio File And Wait For Memory
+    ...    ${TEST_AUDIO_FILE}
+    ...    ${TEST_DEVICE_NAME}
+
+    Set Global Variable    ${TEST_CONVERSATION}    ${conversation}
+
+    # Phase 2: Verify transcription quality
+    Log    Verifying transcription quality    INFO
+    Verify Transcription Quality    ${TEST_CONVERSATION}    ${EXPECTED_TRANSCRIPT}
+
+    # Phase 3: Verify memories were extracted
+    ${memory_count}=    Get Length    ${memories}
+    Should Be True    ${memory_count} > 0    No memories extracted
+    Log    Extracted ${memory_count} memories    INFO
+
+    # Phase 4: Verify memory quality with OpenAI (matches Python test!)
+    Log    Validating memory quality with OpenAI    INFO
+    Verify Memory Quality With OpenAI    ${memories}    ${EXPECTED_MEMORIES}
+
+    # Phase 5: Verify chat integration
+    Log    Verifying chat integration    INFO
+    Verify Chat Integration    api    ${TEST_CONVERSATION}
+
+    Log    End-to-End Pipeline Test Completed Successfully    INFO
+    Log    ✅ Transcript verified    INFO
+    Log    ✅ ${memory_count} memories extracted and validated with OpenAI    INFO
 
 *** Keywords ***
 
@@ -88,7 +196,7 @@ Verify Memory Extraction
 
     Log    Verifying memory extraction    INFO
 
-    # Check if conversation has memory count (may still be processing)
+    # Check if conversation has memory count (may still be started)
     ${has_memory_count}=    Run Keyword And Return Status    Dictionary Should Contain Key    ${conversation}    memory_count
     ${memory_count}=    Run Keyword If    ${has_memory_count}
     ...    Set Variable    ${conversation}[memory_count]
@@ -104,11 +212,11 @@ Verify Memory Extraction
 
     ${api_memory_count}=    Get Length    ${memories}
 
-    # Verify memory extraction status (allow for memory processing to be in progress)
+    # Verify memory extraction status (allow for memory started to be in progress)
     Should Be True    ${memory_count} >= 0    Memory count is negative
     Should Be True    ${api_memory_count} >= 0    API memory count is negative
 
-    Log    Memory extraction verification passed (may still be processing)    INFO
+    Log    Memory extraction verification passed (may still be started)    INFO
     Log    Conversation memory count: ${memory_count}, API memory count: ${api_memory_count}    INFO
 
 Verify Chat Integration
@@ -128,22 +236,21 @@ Verify Chat Integration
 
     Log    Chat session created successfully: ${session_id}    INFO
 
-    # Try to send a message (if endpoint is available)
+    # Send a message via OpenAI-compatible completions endpoint (non-streaming)
     ${conversation_id}=    Set Variable    ${conversation}[conversation_id]
-    ${message_data}=       Create Dictionary    content=What did we discuss about glass blowing in conversation ${conversation_id}?
-    ${msg_status}=        Run Keyword And Return Status
-    ...    POST On Session    ${session_alias}    /api/chat/sessions/${session_id}/messages    json=${message_data}    expected_status=200
+    ${user_msg}=           Create Dictionary    role=user    content=What did we discuss about glass blowing in conversation ${conversation_id}?
+    @{messages}=           Create List    ${user_msg}
+    ${body}=               Create Dictionary    messages=${messages}    stream=${False}    session_id=${session_id}
+    ${msg_response}=       POST On Session    ${session_alias}    /api/chat/completions    json=${body}    expected_status=200
 
-    IF    ${msg_status}
-        Log    Chat message functionality is available    INFO
-    ELSE
-        Log    Chat message endpoints not available or not implemented - skipping message test    WARN
-    END
+    ${msg_data}=    Set Variable    ${msg_response.json()}
+    Dictionary Should Contain Key    ${msg_data}    choices
+    Log    Chat completions endpoint responded successfully    INFO
 
     # Clean up chat session
     ${response}=    DELETE On Session    ${session_alias}    /api/chat/sessions/${session_id}    expected_status=any
     Should Be True    ${response.status_code} in [200, 204]    Chat session deletion failed with status ${response.status_code}
 
-    Log    Chat integration verification completed    INFO
+    Log    Chat integration verification finished    INFO
 
 
